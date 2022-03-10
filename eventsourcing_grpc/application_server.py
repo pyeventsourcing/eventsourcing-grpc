@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import grpc
 from eventsourcing.application import (
@@ -66,6 +66,8 @@ class GRPCRecordingEventReceiver(RecordingEventReceiver):
 
 class ApplicationService(ApplicationServicer):
     def __init__(self, application: Application) -> None:
+        self.clients_lock = Lock()
+        self.clients: Dict[str, ApplicationClient[Application]] = {}
         self.application = application
         self.transcoder = application.construct_transcoder()
         self.is_stopping = Event()
@@ -113,22 +115,27 @@ class ApplicationService(ApplicationServicer):
 
     def Follow(self, request: FollowRequest, context: Context) -> Empty:
         assert isinstance(self.application, Follower)
-        client: ApplicationClient[Application] = ApplicationClient(
-            address=request.address,
-            transcoder=self.application.construct_transcoder(),
-        )
-        client.connect(timeout=5)
+        client = self.get_client(request.address)
         notification_log = GRPCRemoteNotificationLog(client=client)
         self.application.follow(name=request.name, log=notification_log)
         return Empty()
 
+    def get_client(self, address: str) -> ApplicationClient[Application]:
+        with self.clients_lock:
+            try:
+                client = self.clients[address]
+            except KeyError:
+                client = ApplicationClient(
+                    address=address,
+                    transcoder=self.application.construct_transcoder(),
+                )
+                client.connect(timeout=5)
+                self.clients[address] = client
+            return client
+
     def Lead(self, request: LeadRequest, context: Context) -> Empty:
         assert isinstance(self.application, Leader)
-        client: ApplicationClient[Application] = ApplicationClient(
-            address=request.address,
-            transcoder=self.application.construct_transcoder(),
-        )
-        client.connect(timeout=5)
+        client = self.get_client(request.address)
         follower = GRPCRecordingEventReceiver(client=client)
         self.application.lead(follower=follower)
         return Empty()
@@ -139,18 +146,9 @@ class ApplicationService(ApplicationServicer):
             if leader_name not in self.prompted_names:
                 self.prompted_names.append(leader_name)
             self.is_prompted.set()
-
         return Empty()
 
     def run(self) -> None:
-        """
-        Begins by constructing an application instance from
-        given application class and then loops forever until
-        stopped. The loop blocks on waiting for the 'is_prompted'
-        event to be set, then forwards the prompts already received
-        to its application by calling the application's
-        :func:`~Follower.pull_and_process` method for each prompted name.
-        """
         assert isinstance(self.application, Follower)
         while not self.is_stopping.is_set():
             self.is_prompted.wait()

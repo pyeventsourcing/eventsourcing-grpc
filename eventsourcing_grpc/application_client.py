@@ -75,26 +75,9 @@ class ApplicationClient(Generic[TApplication]):
         """
         self.stub.Ping(Empty(), timeout=timeout)
 
-    # def follow(self, upstream_name, upstream_address):
-    #     request = FollowRequest(
-    #         upstream_name=upstream_name, upstream_address=upstream_address
-    #     )
-    #     response = self.stub.Follow(request, timeout=5,)
-
-    # def prompt(self, upstream_name):
-    #     """
-    #     Prompts downstream server with upstream name, so that downstream
-    #     process and promptly pull new notifications from upstream process.
-    #     """
-    #     request = PromptRequest(upstream_name=upstream_name)
-    #     response = self.stub.Prompt(request, timeout=5)
-    #
     def get_notifications(
         self, start: int, limit: int, topics: List[str]
     ) -> List[Notification]:
-        """
-        Gets a section of event notifications from server.
-        """
         request = NotificationsRequest(
             start=str(start), limit=str(limit), topics=topics
         )
@@ -111,35 +94,14 @@ class ApplicationClient(Generic[TApplication]):
             for n in notifications_reply.notifications
         ]
 
-    # def lead(self, application_name, address):
-    #     """
-    #     Requests a process to connect and then send prompts to given address.
-    #     """
-    #     request = LeadRequest(
-    #         downstream_name=application_name, downstream_address=address
-    #     )
-    #     response = self.stub.Lead(request, timeout=5)
-    #
-    # def call_application(self, method_name, *args, **kwargs):
-    #     """
-    #     Calls named method on server's application with given args.
-    #     """
-    #     request = CallRequest(
-    #         method_name=method_name,
-    #         args=self.json_encoder.encode(args),
-    #         kwargs=self.json_encoder.encode(kwargs),
-    #     )
-    #     response = self.stub.CallApplicationMethod(request, timeout=5)
-    #     return self.json_decoder.decode(response.data)
-
     def follow(self, name: str, address: str) -> None:
-        self.stub.Follow(FollowRequest(name=name, address=address))
+        self.stub.Follow(FollowRequest(name=name, address=address), timeout=5)
 
     def lead(self, name: str, address: str) -> None:
-        self.stub.Lead(LeadRequest(name=name, address=address))
+        self.stub.Lead(LeadRequest(name=name, address=address), timeout=5)
 
     def prompt(self, name: str) -> None:
-        self.stub.Prompt(PromptRequest(upstream_name=name))
+        self.stub.Prompt(PromptRequest(upstream_name=name), timeout=5)
 
 
 class MethodProxy:
