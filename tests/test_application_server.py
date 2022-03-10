@@ -5,7 +5,8 @@ from uuid import UUID
 
 from eventsourcing_grpc.application_client import ApplicationClient
 from eventsourcing_grpc.application_server import ApplicationServer
-from tests.fixtures import Order, Orders, Reservations
+from eventsourcing_grpc.runner import GrpcRunner
+from tests.fixtures import Order, Orders, Reservations, system
 
 
 class TestApplicationServer(TestCase):
@@ -181,3 +182,45 @@ class TestApplicationServer(TestCase):
         self.assertEqual(notifications[1].originator_id, order1_id)
         self.assertEqual(notifications[1].originator_version, 2)
         self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
+
+    def test_runner(self) -> None:
+        # Set up.
+        runner = GrpcRunner(system=system)
+        runner.start()
+
+        # Create an order.
+        orders = runner.get_client(Orders)
+        order1_id = orders.app.create_new_order()
+        self.assertIsInstance(order1_id, UUID)
+
+        # Wait for the processing to happen.
+        orders_app = runner.get_app(Orders)
+        for _ in range(20):
+            if len(orders_app.notification_log.select(start=1, limit=10)) > 2:
+                break
+            else:
+                sleep(0.1)
+        else:
+            self.fail("Timeout waiting for len notifications > 2")
+
+        # Get the notifications.
+        notifications = orders.get_notifications(start=1, limit=10, topics=[])
+        self.assertEqual(len(notifications), 3)
+        self.assertEqual(notifications[0].id, 1)
+        self.assertEqual(notifications[0].originator_id, order1_id)
+        self.assertEqual(notifications[0].originator_version, 1)
+        self.assertEqual(notifications[0].topic, "tests.fixtures:Order.Created")
+        self.assertEqual(notifications[1].id, 2)
+        self.assertEqual(notifications[1].originator_id, order1_id)
+        self.assertEqual(notifications[1].originator_version, 2)
+        self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
+        self.assertEqual(notifications[2].id, 3)
+        self.assertEqual(notifications[2].originator_id, order1_id)
+        self.assertEqual(notifications[2].originator_version, 3)
+        self.assertEqual(notifications[2].topic, "tests.fixtures:Order.Paid")
+
+        first_event = orders_app.mapper.to_domain_event(notifications[0])
+        last_event = orders_app.mapper.to_domain_event(notifications[-1])
+        duration = last_event.timestamp - first_event.timestamp
+        print("Duration:", duration)
+        runner.stop()

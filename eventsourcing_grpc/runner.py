@@ -1,94 +1,107 @@
-# import json
-# import logging
-# import subprocess
-# import sys
-# from concurrent import futures
-# from signal import SIGINT
-# from subprocess import Popen, TimeoutExpired
-# from threading import Event
-# from typing import List, Type
-#
-# import grpc
-# from eventsourcing.system import Runner
-# from eventsourcing.utils import get_topic
-#
-# from eventsourcing_grpc import processor
-# from eventsourcing_grpc.processor import ProcessorClient
-# from eventsourcing_grpc.processor_pb2 import Empty
-# from eventsourcing_grpc.processor_pb2_grpc import (
-#     ProcessorServicer,
-#     add_ProcessorServicer_to_server,
-# )
-#
-# logging.basicConfig()
-#
-#
-# class GrpcRunner(Runner):
-#     """
-#     System runner that uses gRPC to communicate between process applications.
-#     """
-#
-#     def __init__(
-#         self,
-#         *args,
-#         pipeline_ids=(DEFAULT_PIPELINE_ID,),
-#         push_prompt_interval=0.25,
-#         **kwargs,
-#     ):
-#         super(GrpcRunner, self).__init__(*args, **kwargs)
-#         self.push_prompt_interval = push_prompt_interval
-#         self.pipeline_ids = pipeline_ids
-#         self.processors: List[Popen] = []
-#         self.addresses = {}
-#         self.port_generator = self.generate_ports(start=50051)
-#
-#     def generate_ports(self, start: int):
-#         """
-#         Generator that yields a sequence of ports from given start number.
-#         """
-#         i = 0
-#         while True:
-#             yield start + i
-#             i += 1
-#
-#     def create_address(self):
-#         """
-#         Creates a new address for a gRPC server.
-#         """
-#         return "localhost:%s" % next(self.port_generator)
-#
-#     def start(self):
-#         """
-#         Starts running a system of process applications.
-#         """
-#         for i, application_name in enumerate(self.system.process_classes):
-#             for pipeline_id in self.pipeline_ids:
-#                 self.addresses[(application_name, pipeline_id)] = self.create_address()
-#
-#         # Start the processors.
-#         for (application_name, pipeline_id), address in self.addresses.items():
-#             application_topic = get_topic(self.system.process_classes[application_name])
-#             infrastructure_topic = get_topic(
-#                 self.infrastructure_class or PopoApplication
-#             )
-#             upstreams = {}
-#             for upstream_name in self.system.upstream_names[application_name]:
-#                 upstreams[upstream_name] = self.addresses[(upstream_name, pipeline_id)]
-#             downstreams = {}
-#             for downstream_name in self.system.downstream_names[application_name]:
-#                 downstreams[downstream_name] = self.addresses[
-#                     (downstream_name, pipeline_id)
-#                 ]
-#             self.start_processor(
-#                 application_topic,
-#                 pipeline_id,
-#                 infrastructure_topic,
-#                 self.setup_tables,
-#                 address,
-#                 upstreams,
-#                 downstreams,
-#             )
-#
+from itertools import count
+from threading import Event
+from typing import Dict, Optional, Type, cast
+
+from eventsourcing.application import Application, TApplication
+from eventsourcing.system import Runner, System
+from eventsourcing.utils import EnvType
+
+from eventsourcing_grpc.application_client import ApplicationClient
+from eventsourcing_grpc.application_server import ApplicationServer
+
+
+class GrpcRunner(Runner):
+    """
+    System runner that uses gRPC to communicate between process applications.
+    """
+
+    def __init__(self, system: System, env: Optional[EnvType] = None):
+        """
+        Initialises runner with the given :class:`System`.
+        """
+        super().__init__(system=system, env=env)
+        self.apps: Dict[str, Application] = {}
+        self.servers: Dict[str, ApplicationServer] = {}
+        self.clients: Dict[str, ApplicationClient[Application]] = {}
+        self.addresses: Dict[str, str] = {}
+        self.port_generator = count(start=50051)
+        self.has_errored = Event()
+
+        # Construct followers.
+        for follower_name in self.system.followers:
+            follower_class = self.system.follower_cls(follower_name)
+            self.start_application(follower_class)
+
+        # Construct non-follower leaders.
+        for leader_name in self.system.leaders_only:
+            leader_cls = self.system.leader_cls(leader_name)
+            self.start_application(leader_cls)
+
+        # Construct singles.
+        for name in self.system.singles:
+            single_cls = self.system.get_app_cls(name)
+            self.start_application(single_cls)
+
+    def start_application(self, app_class: Type[Application]) -> None:
+        application = app_class(env=self.env)
+        self.apps[app_class.name] = application
+        address = self.create_address()
+        self.addresses[app_class.name] = address
+        server = ApplicationServer(application=application, address=address)
+        server.start()
+        self.servers[app_class.name] = server
+        client: ApplicationClient[Application] = ApplicationClient(
+            address=address, transcoder=application.construct_transcoder()
+        )
+        self.clients[app_class.name] = client
+        client.connect(timeout=1)
+
+    def create_address(self) -> str:
+        """
+        Creates a new address for a gRPC server.
+        """
+        return "localhost:%s" % next(self.port_generator)
+
+    def start(self) -> None:
+        super().start()
+
+        # Lead and follow.
+        for edge in self.system.edges:
+            leader_name = edge[0]
+            follower_name = edge[1]
+            leader_client = self.clients[leader_name]
+            leader_address = self.addresses[leader_name]
+            follower_client = self.clients[follower_name]
+            follower_address = self.addresses[follower_name]
+            follower_client.follow(leader_name, leader_address)
+            leader_client.lead(follower_name, follower_address)
+
+    def get_client(self, cls: Type[TApplication]) -> ApplicationClient[TApplication]:
+        return cast(ApplicationClient[TApplication], self.clients[cls.name])
+
+    def get(self, cls: Type[TApplication]) -> TApplication:
+        return cast(ApplicationClient[TApplication], self.clients[cls.name]).app
+
+    def get_app(self, cls: Type[TApplication]) -> TApplication:
+        return cast(TApplication, self.apps[cls.name])
+
+    def stop(self) -> None:
+        for client in self.clients.values():
+            client.close()
+        self.clients.clear()
+        for server in self.servers.values():
+            server.stop()
+        self.servers.clear()
+        for app in self.apps.values():
+            app.close()
+        self.apps.clear()
+        self.addresses.clear()
+
+    def __del__(self) -> None:
+        print("runner deleted")
+        self.stop()
+
+
 #     def start_processor(
 #         self,
 #         application_topic,
