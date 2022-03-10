@@ -1,4 +1,5 @@
 from threading import Event, Thread
+from typing import Iterator
 from unittest import TestCase
 
 from eventsourcing_grpc.application_client import ApplicationClient
@@ -6,12 +7,12 @@ from eventsourcing_grpc.application_server import ApplicationServer
 
 
 class ApplicationThread(Thread):
-    def __init__(self, address):
+    def __init__(self, address: str) -> None:
         super().__init__(daemon=True)
         self.address = address
         self.is_started = Event()
 
-    def run(self):
+    def run(self) -> None:
         self.server = ApplicationServer(address=self.address)
         self.server.start()
         self.is_started.set()
@@ -36,13 +37,13 @@ class TestApplicationServer(TestCase):
         self.client.connect(timeout=1)
         # self.client.ping()
 
-    def create_address(self):
+    def create_address(self) -> str:
         """
         Creates a new address for a gRPC server.
         """
         return "localhost:%s" % next(self.port_generator)
 
-    def generate_ports(self, start: int = 50051):
+    def generate_ports(self, start: int = 50051) -> Iterator[int]:
         """
         Generator that yields a sequence of ports from given start number.
         """

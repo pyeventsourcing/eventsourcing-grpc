@@ -9,13 +9,13 @@ from eventsourcing_grpc.application_pb2_grpc import ApplicationStub
 
 
 class ApplicationClient(object):
-    def __init__(self, address):
+    def __init__(self, address: str) -> None:
         self.address = address
         self.channel = None
         # self.json_encoder = ObjectJSONEncoder()
         # self.json_decoder = ObjectJSONDecoder()
 
-    def connect(self, timeout=5):
+    def connect(self, timeout: int = 5) -> None:
         """
         Connect to client to server at given address.
 
@@ -33,7 +33,7 @@ class ApplicationClient(object):
                 request = Empty()
                 reply: Empty = self.stub.Ping(request)
                 print("Reply:", type(reply))
-            except _InactiveRpcError:
+            except _InactiveRpcError as e:
                 print(f"Inactive RPC error from: {self.address}")
 
                 if timeout is not None:
@@ -41,7 +41,7 @@ class ApplicationClient(object):
                     if timer_duration > timeout:
                         raise Exception(
                             "Timed out trying to connect to %s" % self.address
-                        )
+                        ) from e
                     sleep(1)
                 else:
                     print(f"Connecting to application server: {self.address}")
@@ -56,19 +56,18 @@ class ApplicationClient(object):
     # def __exit__(self, exc_type, exc_val, exc_tb):
     #     self.close()
     #
-    def close(self):
+    def close(self) -> None:
         """
         Closes the client's GPRC channel.
         """
         if self.channel is not None:
             self.channel.close()
 
-    def ping(self, timeout=5):
+    def ping(self, timeout: int = 5) -> None:
         """
         Sends a Ping request to the server.
         """
-        request = Empty()
-        response = self.stub.Ping(request, timeout=timeout)
+        self.stub.Ping(Empty(), timeout=timeout)
 
     # def follow(self, upstream_name, upstream_address):
     #     request = FollowRequest(

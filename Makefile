@@ -115,6 +115,7 @@ generate-grpc-protos:
 	  --proto_path=./protos \
 	  --python_out=. \
 	  --grpc_python_out=. \
+	   --mypy_out=. \
 	  protos/eventsourcing_grpc/application.proto
 
 # .PHONY: generate-grpc-protos

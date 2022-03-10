@@ -6,7 +6,7 @@ from tests.fixtures import Orders, system
 
 
 class TestFixtures(TestCase):
-    def test_run_system(self):
+    def test_run_system(self) -> None:
         runner = SingleThreadedRunner(system=system)
         runner.start()
         orders = runner.get(Orders)
