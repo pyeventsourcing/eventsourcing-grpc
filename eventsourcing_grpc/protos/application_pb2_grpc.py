@@ -21,6 +21,11 @@ class ApplicationStub(object):
             request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.SerializeToString,
             response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
         )
+        self.CallApplicationMethod = channel.unary_unary(
+            "/eventsourcing_grpc.Application/CallApplicationMethod",
+            request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodRequest.SerializeToString,
+            response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodReply.FromString,
+        )
         self.GetNotifications = channel.unary_unary(
             "/eventsourcing_grpc.Application/GetNotifications",
             request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsRequest.SerializeToString,
@@ -32,6 +37,12 @@ class ApplicationServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Ping(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def CallApplicationMethod(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
@@ -50,6 +61,11 @@ def add_ApplicationServicer_to_server(servicer, server):
             servicer.Ping,
             request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
             response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.SerializeToString,
+        ),
+        "CallApplicationMethod": grpc.unary_unary_rpc_method_handler(
+            servicer.CallApplicationMethod,
+            request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodRequest.FromString,
+            response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodReply.SerializeToString,
         ),
         "GetNotifications": grpc.unary_unary_rpc_method_handler(
             servicer.GetNotifications,
@@ -86,6 +102,35 @@ class Application(object):
             "/eventsourcing_grpc.Application/Ping",
             eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.SerializeToString,
             eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def CallApplicationMethod(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/eventsourcing_grpc.Application/CallApplicationMethod",
+            eventsourcing__grpc_dot_protos_dot_application__pb2.MethodRequest.SerializeToString,
+            eventsourcing__grpc_dot_protos_dot_application__pb2.MethodReply.FromString,
             options,
             channel_credentials,
             insecure,

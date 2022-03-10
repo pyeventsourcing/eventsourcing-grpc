@@ -1,10 +1,15 @@
 import logging
-from typing import Any, Optional, cast
+from typing import Any, Dict, Optional, cast
 from uuid import NAMESPACE_OID, UUID, uuid5
 
 from eventsourcing.application import ProcessingEvent
 from eventsourcing.domain import Aggregate, DomainEvent, event
-from eventsourcing.persistence import OperationalError, RecordConflictError
+from eventsourcing.persistence import (
+    OperationalError,
+    RecordConflictError,
+    Transcoder,
+    Transcoding,
+)
 from eventsourcing.system import ProcessApplication, System
 from eventsourcing.utils import retry
 
@@ -69,7 +74,24 @@ class Payment(Aggregate):
 logger = logging.getLogger()
 
 
+class OrderAsDict(Transcoding):
+    type = Order
+    name = "order_as_dict"
+
+    def encode(self, obj: Order) -> Dict[str, Any]:
+        return obj.__dict__
+
+    def decode(self, data: Dict[str, Any]) -> Order:
+        aggregate = object.__new__(Order)
+        aggregate.__dict__.update(data)
+        return aggregate
+
+
 class Orders(ProcessApplication):
+    def register_transcodings(self, transcoder: Transcoder) -> None:
+        super(Orders, self).register_transcodings(transcoder)
+        transcoder.register(OrderAsDict())
+
     def policy(
         self,
         domain_event: DomainEvent[Any],
@@ -77,14 +99,14 @@ class Orders(ProcessApplication):
     ) -> None:
         if isinstance(domain_event, Reservation.Created):
             # Set the order as reserved.
-            order = self.get_order(order_id=domain_event.order_id)
+            order = self._get_order(order_id=domain_event.order_id)
             assert not order.is_reserved
             order.set_is_reserved(domain_event.originator_id)
             processing_event.collect_events(order)
 
         elif isinstance(domain_event, Payment.Created):
             # Set the order as paid.
-            order = self.get_order(domain_event.order_id)
+            order = self._get_order(domain_event.order_id)
             assert not order.is_paid
             order.set_is_paid(domain_event.originator_id)
             processing_event.collect_events(order)
@@ -96,15 +118,25 @@ class Orders(ProcessApplication):
         return order.id
 
     def is_order_reserved(self, order_id: UUID) -> bool:
-        order = self.get_order(order_id)
+        order = self._get_order(order_id)
         return order is not None
 
     def is_order_paid(self, order_id: UUID) -> bool:
-        order = self.get_order(order_id)
+        order = self._get_order(order_id)
         return order is not None and order.is_paid
 
-    def get_order(self, order_id: UUID) -> Order:
+    def _get_order(self, order_id: UUID) -> Order:
         return cast(Order, self.repository.get(order_id))
+
+    def get_order(self, order_id: UUID) -> Dict[str, Any]:
+        order = self._get_order(order_id)
+        return {
+            "id": order.id,
+            "is_reserved": order.is_reserved,
+            "is_paid": order.is_paid,
+            "reservation_id": order.reservation_id,
+            "payment_id": order.payment_id,
+        }
 
 
 class Reservations(ProcessApplication):

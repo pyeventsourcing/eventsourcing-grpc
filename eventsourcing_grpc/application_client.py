@@ -1,21 +1,35 @@
 from datetime import datetime
 from time import sleep
+from typing import Any, Generic, List, cast
+from uuid import UUID
 
 import grpc
-from grpc._channel import _InactiveRpcError
+from eventsourcing.application import TApplication
+from eventsourcing.persistence import Notification, Transcoder
+from grpc import RpcError
 
-from eventsourcing_grpc.protos.application_pb2 import Empty
+from eventsourcing_grpc.protos.application_pb2 import (
+    Empty,
+    MethodRequest,
+    NotificationsReply,
+    NotificationsRequest,
+)
 from eventsourcing_grpc.protos.application_pb2_grpc import ApplicationStub
 
 
-class ApplicationClient(object):
-    def __init__(self, address: str) -> None:
+class ApplicationClient(Generic[TApplication]):
+    def __init__(self, address: str, transcoder: Transcoder) -> None:
         self.address = address
+        self.transcoder = transcoder
         self.channel = None
         # self.json_encoder = ObjectJSONEncoder()
         # self.json_decoder = ObjectJSONDecoder()
 
-    def connect(self, timeout: int = 5) -> None:
+    @property
+    def app(self) -> TApplication:
+        return cast(TApplication, ApplicationProxy(self))
+
+    def connect(self, timeout: float = 5) -> None:
         """
         Connect to client to server at given address.
 
@@ -29,33 +43,22 @@ class ApplicationClient(object):
         while True:
             # Ping until get a response.
             try:
-                print(f"Connecting to application server: {self.address}")
                 request = Empty()
-                reply: Empty = self.stub.Ping(request)
-                print("Reply:", type(reply))
-            except _InactiveRpcError as e:
-                print(f"Inactive RPC error from: {self.address}")
-
+                self.stub.Ping(request)
+            except RpcError as e:
                 if timeout is not None:
                     timer_duration = (datetime.now() - timer_started).total_seconds()
                     if timer_duration > timeout:
-                        raise Exception(
-                            "Timed out trying to connect to %s" % self.address
-                        ) from e
-                    sleep(1)
-                else:
-                    print(f"Connecting to application server: {self.address}")
-                    sleep(1)
-                    continue
+                        err_msg = f"RPC error from '{self.address}'"
+                        raise TimeoutError(err_msg) from e
+                sleep(0.1)
+                continue
             else:
                 break
 
-    # def __enter__(self):
-    #     return self
-    #
-    # def __exit__(self, exc_type, exc_val, exc_tb):
-    #     self.close()
-    #
+    def __del__(self) -> None:
+        self.close()
+
     def close(self) -> None:
         """
         Closes the client's GPRC channel.
@@ -83,15 +86,28 @@ class ApplicationClient(object):
     #     request = PromptRequest(upstream_name=upstream_name)
     #     response = self.stub.Prompt(request, timeout=5)
     #
-    # def get_notifications(self, section_id):
-    #     """
-    #     Gets a section of event notifications from server.
-    #     """
-    #     request = NotificationsRequest(section_id=section_id)
-    #     notifications_reply = self.stub.GetNotifications(request, timeout=5)
-    #     assert isinstance(notifications_reply, NotificationsReply)
-    #     return notifications_reply.section
-    #
+    def get_notifications(
+        self, start: int, limit: int, topics: List[str]
+    ) -> List[Notification]:
+        """
+        Gets a section of event notifications from server.
+        """
+        request = NotificationsRequest(
+            start=str(start), limit=str(limit), topics=topics
+        )
+        notifications_reply = self.stub.GetNotifications(request, timeout=5)
+        assert isinstance(notifications_reply, NotificationsReply)
+        return [
+            Notification(
+                id=int(n.id),
+                originator_id=UUID(n.originator_id),
+                originator_version=int(n.originator_version),
+                topic=n.topic,
+                state=n.state,
+            )
+            for n in notifications_reply.notifications
+        ]
+
     # def lead(self, application_name, address):
     #     """
     #     Requests a process to connect and then send prompts to given address.
@@ -112,3 +128,29 @@ class ApplicationClient(object):
     #     )
     #     response = self.stub.CallApplicationMethod(request, timeout=5)
     #     return self.json_decoder.decode(response.data)
+
+
+class MethodProxy:
+    def __init__(self, client: ApplicationClient[TApplication], method_name: str):
+        self.client = client
+        self.method_name = method_name
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        Calls named method on server's application with given args.
+        """
+        request = MethodRequest(
+            method_name=self.method_name,
+            args=self.client.transcoder.encode(args),
+            kwargs=self.client.transcoder.encode(kwargs),
+        )
+        response = self.client.stub.CallApplicationMethod(request, timeout=5)
+        return self.client.transcoder.decode(response.data)
+
+
+class ApplicationProxy:
+    def __init__(self, client: ApplicationClient[TApplication]) -> None:
+        self.client = client
+
+    def __getattr__(self, item: str) -> MethodProxy:
+        return MethodProxy(self.client, item)
