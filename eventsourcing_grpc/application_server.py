@@ -3,8 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 import grpc
 from grpc._server import _Context as Context
 
-from eventsourcing_grpc.application_pb2 import Empty
-from eventsourcing_grpc.application_pb2_grpc import (
+from eventsourcing_grpc.protos.application_pb2 import Empty
+from eventsourcing_grpc.protos.application_pb2_grpc import (
     ApplicationServicer,
     add_ApplicationServicer_to_server,
 )

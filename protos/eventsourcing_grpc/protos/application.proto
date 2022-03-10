@@ -23,10 +23,10 @@ package eventsourcing_grpc;
 
 service Application {
   rpc Ping (Empty) returns (Empty) {}
+  rpc GetNotifications (NotificationsRequest) returns (NotificationsReply) {}
 //  rpc Follow (FollowRequest) returns (Empty) {}
 //  rpc Lead (LeadRequest) returns (Empty) {}
 //  rpc Prompt (PromptRequest) returns (Empty) {}
-//  rpc GetNotifications (NotificationsRequest) returns (NotificationsReply) {}
 //  rpc CallApplicationMethod (CallRequest) returns (CallReply) {}
 
 }
@@ -52,14 +52,14 @@ message Empty {
 //  string upstream_name = 1;
 //}
 //
-//message NotificationsRequest {
-//  string section_id = 1;
-//}
-//
-//message NotificationsReply {
-//  string section = 1;
-//}
-//
+message NotificationsRequest {
+  string section_id = 1;
+}
+
+message NotificationsReply {
+  string section = 1;
+}
+
 //message CallRequest {
 //  string method_name = 1;
 //  string args = 2;

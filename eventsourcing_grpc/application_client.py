@@ -4,8 +4,8 @@ from time import sleep
 import grpc
 from grpc._channel import _InactiveRpcError
 
-from eventsourcing_grpc.application_pb2 import Empty
-from eventsourcing_grpc.application_pb2_grpc import ApplicationStub
+from eventsourcing_grpc.protos.application_pb2 import Empty
+from eventsourcing_grpc.protos.application_pb2_grpc import ApplicationStub
 
 
 class ApplicationClient(object):
