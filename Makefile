@@ -108,3 +108,19 @@ build:
 .PHONY: publish
 publish:
 	$(POETRY) publish
+
+.PHONY: generate-grpc-protos
+generate-grpc-protos:
+	python -m grpc_tools.protoc \
+	  --proto_path=./protos \
+	  --python_out=. \
+	  --grpc_python_out=. \
+	  protos/eventsourcing_grpc/application.proto
+
+# .PHONY: generate-grpc-protos
+# generate-grpc-protos:
+# 	python -m grpc_tools.protoc \
+# 	  --proto_path=./eventsourcing_grpc \
+# 	  --python_out=eventsourcing_grpc \
+# 	  --grpc_python_out=eventsourcing_grpc \
+# 	  eventsourcing_grpc/application.proto

@@ -1,16 +1,22 @@
-[*please edit this file according to the needs of your project*]
-
 # Welcome to Eventsourcing gRPC
 
-[*please summarise what your project provides to users*]
+Code for running an application as a gRPC process.
 
 ## Installation
 
-[*indicate how users can install your project*]
+## Installation
+
+Use pip to install the [stable distribution](https://pypi.org/project/eventsourcing-grpc/)
+from the Python Package Index.
+
+    $ pip install eventsourcing_grpc
+
+It is recommended to install Python packages into a Python virtual environment.
+
 
 ## Getting started
 
-[*indicate how users can use your project*]
+...
 
 ## Developers
 

@@ -23,6 +23,8 @@ include = ["eventsourcing-grpc/py.typed"]
 [tool.poetry.dependencies]
 python = "^3.8"
 eventsourcing = { version = "~9.2.3" }
+grpcio = "~1.44.0"
+#grpcio = "~1.29.0"
 
 [tool.poetry.dev-dependencies]
 black = { version = "*", allow-prereleases = true }
@@ -38,6 +40,7 @@ pre-commit = "*"
 pre-commit-hooks = "*"
 pytest = "*"
 pytest-cov = "*"
+grpcio-tools = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
