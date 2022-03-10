@@ -25,14 +25,13 @@ service Application {
   rpc Ping (Empty) returns (Empty) {}
   rpc CallApplicationMethod (MethodRequest) returns (MethodReply) {}
   rpc GetNotifications (NotificationsRequest) returns (NotificationsReply) {}
-//  rpc Follow (FollowRequest) returns (Empty) {}
-//  rpc Lead (LeadRequest) returns (Empty) {}
-//  rpc Prompt (PromptRequest) returns (Empty) {}
+  rpc Follow (FollowRequest) returns (Empty) {}
+  rpc Lead (LeadRequest) returns (Empty) {}
+  rpc Prompt (PromptRequest) returns (Empty) {}
 
 }
 
-message Empty {
-}
+message Empty {}
 
 message MethodRequest {
   string method_name = 1;
@@ -62,21 +61,16 @@ message NotificationsReply {
   repeated Notification notifications = 1;
 }
 
-//message InitRequest {
-//  string application_name = 1;
-//}
-//
-//message FollowRequest {
-//  string upstream_name = 1;
-//  string upstream_address = 2;
-//}
-//
-//message LeadRequest {
-//  string downstream_name = 1;
-//  string downstream_address = 2;
-//}
-//
-//message PromptRequest {
-//  string upstream_name = 1;
-//}
-//
+message FollowRequest {
+  string name = 1;
+  string address = 2;
+}
+
+message LeadRequest {
+  string name = 1;
+  string address = 2;
+}
+
+message PromptRequest {
+  string upstream_name = 1;
+}

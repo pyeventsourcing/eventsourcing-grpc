@@ -10,9 +10,12 @@ from grpc import RpcError
 
 from eventsourcing_grpc.protos.application_pb2 import (
     Empty,
+    FollowRequest,
+    LeadRequest,
     MethodRequest,
     NotificationsReply,
     NotificationsRequest,
+    PromptRequest,
 )
 from eventsourcing_grpc.protos.application_pb2_grpc import ApplicationStub
 
@@ -128,6 +131,15 @@ class ApplicationClient(Generic[TApplication]):
     #     )
     #     response = self.stub.CallApplicationMethod(request, timeout=5)
     #     return self.json_decoder.decode(response.data)
+
+    def follow(self, name: str, address: str) -> None:
+        self.stub.Follow(FollowRequest(name=name, address=address))
+
+    def lead(self, name: str, address: str) -> None:
+        self.stub.Lead(LeadRequest(name=name, address=address))
+
+    def prompt(self, name: str) -> None:
+        self.stub.Prompt(PromptRequest(upstream_name=name))
 
 
 class MethodProxy:

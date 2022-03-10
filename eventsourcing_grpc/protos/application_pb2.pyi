@@ -145,3 +145,56 @@ class NotificationsReply(google.protobuf.message.Message):
     ) -> None: ...
 
 global___NotificationsReply = NotificationsReply
+
+class FollowRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    NAME_FIELD_NUMBER: builtins.int
+    ADDRESS_FIELD_NUMBER: builtins.int
+    name: typing.Text
+    address: typing.Text
+    def __init__(
+        self,
+        *,
+        name: typing.Text = ...,
+        address: typing.Text = ...,
+    ) -> None: ...
+    def ClearField(
+        self,
+        field_name: typing_extensions.Literal["address", b"address", "name", b"name"],
+    ) -> None: ...
+
+global___FollowRequest = FollowRequest
+
+class LeadRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    NAME_FIELD_NUMBER: builtins.int
+    ADDRESS_FIELD_NUMBER: builtins.int
+    name: typing.Text
+    address: typing.Text
+    def __init__(
+        self,
+        *,
+        name: typing.Text = ...,
+        address: typing.Text = ...,
+    ) -> None: ...
+    def ClearField(
+        self,
+        field_name: typing_extensions.Literal["address", b"address", "name", b"name"],
+    ) -> None: ...
+
+global___LeadRequest = LeadRequest
+
+class PromptRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    UPSTREAM_NAME_FIELD_NUMBER: builtins.int
+    upstream_name: typing.Text
+    def __init__(
+        self,
+        *,
+        upstream_name: typing.Text = ...,
+    ) -> None: ...
+    def ClearField(
+        self, field_name: typing_extensions.Literal["upstream_name", b"upstream_name"]
+    ) -> None: ...
+
+global___PromptRequest = PromptRequest

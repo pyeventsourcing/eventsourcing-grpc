@@ -27,7 +27,12 @@ DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
     b" \x01(\t\x12\r\n\x05state\x18\x05"
     b' \x01(\x0c"M\n\x12NotificationsReply\x12\x37\n\rnotifications\x18\x01'
     b" \x03(\x0b\x32"
-    b' .eventsourcing_grpc.Notification2\x94\x02\n\x0b\x41pplication\x12>\n\x04Ping\x12\x19.eventsourcing_grpc.Empty\x1a\x19.eventsourcing_grpc.Empty"\x00\x12]\n\x15\x43\x61llApplicationMethod\x12!.eventsourcing_grpc.MethodRequest\x1a\x1f.eventsourcing_grpc.MethodReply"\x00\x12\x66\n\x10GetNotifications\x12(.eventsourcing_grpc.NotificationsRequest\x1a&.eventsourcing_grpc.NotificationsReply"\x00\x42=\n!io.eventsourcing_grpc.applicationB\x10\x41pplicationProtoP\x01\xa2\x02\x03\x45SAb\x06proto3'
+    b' .eventsourcing_grpc.Notification".\n\rFollowRequest\x12\x0c\n\x04name\x18\x01'
+    b" \x01(\t\x12\x0f\n\x07\x61\x64\x64ress\x18\x02"
+    b' \x01(\t",\n\x0bLeadRequest\x12\x0c\n\x04name\x18\x01'
+    b" \x01(\t\x12\x0f\n\x07\x61\x64\x64ress\x18\x02"
+    b' \x01(\t"&\n\rPromptRequest\x12\x15\n\rupstream_name\x18\x01'
+    b' \x01(\t2\xee\x03\n\x0b\x41pplication\x12>\n\x04Ping\x12\x19.eventsourcing_grpc.Empty\x1a\x19.eventsourcing_grpc.Empty"\x00\x12]\n\x15\x43\x61llApplicationMethod\x12!.eventsourcing_grpc.MethodRequest\x1a\x1f.eventsourcing_grpc.MethodReply"\x00\x12\x66\n\x10GetNotifications\x12(.eventsourcing_grpc.NotificationsRequest\x1a&.eventsourcing_grpc.NotificationsReply"\x00\x12H\n\x06\x46ollow\x12!.eventsourcing_grpc.FollowRequest\x1a\x19.eventsourcing_grpc.Empty"\x00\x12\x44\n\x04Lead\x12\x1f.eventsourcing_grpc.LeadRequest\x1a\x19.eventsourcing_grpc.Empty"\x00\x12H\n\x06Prompt\x12!.eventsourcing_grpc.PromptRequest\x1a\x19.eventsourcing_grpc.Empty"\x00\x42=\n!io.eventsourcing_grpc.applicationB\x10\x41pplicationProtoP\x01\xa2\x02\x03\x45SAb\x06proto3'
 )
 
 
@@ -37,6 +42,9 @@ _METHODREPLY = DESCRIPTOR.message_types_by_name["MethodReply"]
 _NOTIFICATIONSREQUEST = DESCRIPTOR.message_types_by_name["NotificationsRequest"]
 _NOTIFICATION = DESCRIPTOR.message_types_by_name["Notification"]
 _NOTIFICATIONSREPLY = DESCRIPTOR.message_types_by_name["NotificationsReply"]
+_FOLLOWREQUEST = DESCRIPTOR.message_types_by_name["FollowRequest"]
+_LEADREQUEST = DESCRIPTOR.message_types_by_name["LeadRequest"]
+_PROMPTREQUEST = DESCRIPTOR.message_types_by_name["PromptRequest"]
 Empty = _reflection.GeneratedProtocolMessageType(
     "Empty",
     (_message.Message,),
@@ -103,6 +111,39 @@ NotificationsReply = _reflection.GeneratedProtocolMessageType(
 )
 _sym_db.RegisterMessage(NotificationsReply)
 
+FollowRequest = _reflection.GeneratedProtocolMessageType(
+    "FollowRequest",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _FOLLOWREQUEST,
+        "__module__": "eventsourcing_grpc.protos.application_pb2"
+        # @@protoc_insertion_point(class_scope:eventsourcing_grpc.FollowRequest)
+    },
+)
+_sym_db.RegisterMessage(FollowRequest)
+
+LeadRequest = _reflection.GeneratedProtocolMessageType(
+    "LeadRequest",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _LEADREQUEST,
+        "__module__": "eventsourcing_grpc.protos.application_pb2"
+        # @@protoc_insertion_point(class_scope:eventsourcing_grpc.LeadRequest)
+    },
+)
+_sym_db.RegisterMessage(LeadRequest)
+
+PromptRequest = _reflection.GeneratedProtocolMessageType(
+    "PromptRequest",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _PROMPTREQUEST,
+        "__module__": "eventsourcing_grpc.protos.application_pb2"
+        # @@protoc_insertion_point(class_scope:eventsourcing_grpc.PromptRequest)
+    },
+)
+_sym_db.RegisterMessage(PromptRequest)
+
 _APPLICATION = DESCRIPTOR.services_by_name["Application"]
 if _descriptor._USE_C_DESCRIPTORS == False:
 
@@ -122,6 +163,12 @@ if _descriptor._USE_C_DESCRIPTORS == False:
     _NOTIFICATION._serialized_end = 350
     _NOTIFICATIONSREPLY._serialized_start = 352
     _NOTIFICATIONSREPLY._serialized_end = 429
-    _APPLICATION._serialized_start = 432
-    _APPLICATION._serialized_end = 708
+    _FOLLOWREQUEST._serialized_start = 431
+    _FOLLOWREQUEST._serialized_end = 477
+    _LEADREQUEST._serialized_start = 479
+    _LEADREQUEST._serialized_end = 523
+    _PROMPTREQUEST._serialized_start = 525
+    _PROMPTREQUEST._serialized_end = 563
+    _APPLICATION._serialized_start = 566
+    _APPLICATION._serialized_end = 1060
 # @@protoc_insertion_point(module_scope)
