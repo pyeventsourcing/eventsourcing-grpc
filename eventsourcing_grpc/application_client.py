@@ -46,8 +46,7 @@ class ApplicationClient(Generic[TApplication]):
         while True:
             # Ping until get a response.
             try:
-                request = Empty()
-                self.stub.Ping(request)
+                self.ping()
             except RpcError as e:
                 if timeout is not None:
                     timer_duration = (datetime.now() - timer_started).total_seconds()
