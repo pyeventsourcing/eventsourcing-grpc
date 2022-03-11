@@ -183,10 +183,16 @@ class TestApplicationServer(TestCase):
         self.assertEqual(notifications[1].originator_version, 2)
         self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
 
-    def test_runner(self) -> None:
+    def test_runner_subprocess_false(self) -> None:
+        self._test_runner(subprocess=False)
+
+    def test_runner_subprocess_true(self) -> None:
+        self._test_runner(subprocess=True)
+
+    def _test_runner(self, subprocess: bool = True) -> None:
         # Set up.
         runner = GrpcRunner(system=system)
-        runner.start()
+        runner.start(subprocess=subprocess)
 
         # Create an order.
         orders = runner.get_client(Orders)
@@ -196,7 +202,9 @@ class TestApplicationServer(TestCase):
         # Wait for the processing to happen.
         orders_app = runner.get_app(Orders)
         for _ in range(20):
-            if len(orders_app.notification_log.select(start=1, limit=10)) > 2:
+            notifications = orders.get_notifications(start=1, limit=10, topics=[])
+
+            if len(notifications) > 2:
                 break
             else:
                 sleep(0.1)

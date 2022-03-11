@@ -4,8 +4,6 @@ Code for running an application as a gRPC process.
 
 ## Installation
 
-## Installation
-
 Use pip to install the [stable distribution](https://pypi.org/project/eventsourcing-grpc/)
 from the Python Package Index.
 
