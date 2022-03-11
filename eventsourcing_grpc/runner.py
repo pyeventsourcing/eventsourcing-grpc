@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from itertools import count
 from signal import SIGINT
