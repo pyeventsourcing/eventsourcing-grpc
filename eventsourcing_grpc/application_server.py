@@ -114,11 +114,14 @@ class ApplicationService(ApplicationServicer):
         )
 
     def Follow(self, request: FollowRequest, context: Context) -> Empty:
-        assert isinstance(self.application, Follower)
-        client = self.get_client(request.address)
-        notification_log = GRPCRemoteNotificationLog(client=client)
-        self.application.follow(name=request.name, log=notification_log)
+        self.follow(request.name, request.address)
         return Empty()
+
+    def follow(self, leader_name: str, leader_address: str) -> None:
+        client = self.get_client(leader_address)
+        notification_log = GRPCRemoteNotificationLog(client=client)
+        assert isinstance(self.application, Follower)
+        self.application.follow(name=leader_name, log=notification_log)
 
     def get_client(self, address: str) -> ApplicationClient[Application]:
         with self.clients_lock:
@@ -134,11 +137,15 @@ class ApplicationService(ApplicationServicer):
             return client
 
     def Lead(self, request: LeadRequest, context: Context) -> Empty:
-        assert isinstance(self.application, Leader)
-        client = self.get_client(request.address)
-        follower = GRPCRecordingEventReceiver(client=client)
-        self.application.lead(follower=follower)
+        address = request.address
+        self.lead(address)
         return Empty()
+
+    def lead(self, address: str) -> None:
+        client = self.get_client(address)
+        follower = GRPCRecordingEventReceiver(client=client)
+        assert isinstance(self.application, Leader)
+        self.application.lead(follower=follower)
 
     def Prompt(self, request: PromptRequest, context: Context) -> Empty:
         leader_name = request.upstream_name
