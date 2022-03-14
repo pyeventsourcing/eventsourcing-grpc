@@ -171,7 +171,7 @@ class ApplicationService(ApplicationServicer):
                     error = EventProcessingError(str(e))
                     error.__cause__ = e
                     # Todo: Log the error.
-                    print(error)
+                    print("Event processing error:", error)
 
     def stop(self) -> None:
         self.is_stopping.set()

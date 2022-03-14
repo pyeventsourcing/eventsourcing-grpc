@@ -183,15 +183,28 @@ class TestApplicationServer(TestCase):
         self.assertEqual(notifications[1].originator_version, 2)
         self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
 
-    def test_runner_subprocess_false(self) -> None:
+    def test_runner(self) -> None:
         self._test_runner(subprocess=False)
 
-    def test_runner_subprocess_true(self) -> None:
+    def test_runner_with_subprocess(self) -> None:
         self._test_runner(subprocess=True)
 
-    def _test_runner(self, subprocess: bool = True) -> None:
+    def test_runner_with_subprocess_and_system_topic(self) -> None:
+        self._test_runner(subprocess=True, with_system_topic=True)
+
+    def _test_runner(
+        self, subprocess: bool = False, with_system_topic: bool = False
+    ) -> None:
         # Set up.
-        runner = GrpcRunner(system=system)
+        env = {
+            "ORDERS_GRPC_ADDRESS": "localhost:50051",
+            "RESERVATIONS_GRPC_ADDRESS": "localhost:50052",
+            "PAYMENTS_GRPC_ADDRESS": "localhost:50053",
+        }
+        if with_system_topic:
+            env["SYSTEM_TOPIC"] = "tests.fixtures:system"
+
+        runner = GrpcRunner(system=system, env=env)
         runner.start(subprocess=subprocess)
 
         # Create an order.
@@ -201,7 +214,7 @@ class TestApplicationServer(TestCase):
 
         # Wait for the processing to happen.
         orders_app = runner.get_app(Orders)
-        for _ in range(20):
+        for _ in range(2000):
             notifications = orders.get_notifications(start=1, limit=10, topics=[])
 
             if len(notifications) > 2:
