@@ -106,7 +106,9 @@ class ApplicationClient(Generic[TApplication]):
         request = NotificationsRequest(
             start=str(start), limit=str(limit), topics=topics
         )
-        notifications_reply = self.stub.GetNotifications(request, timeout=5)
+        notifications_reply = self.stub.GetNotifications(
+            request, timeout=self.request_deadline
+        )
         assert isinstance(notifications_reply, NotificationsReply)
         return [
             Notification(
