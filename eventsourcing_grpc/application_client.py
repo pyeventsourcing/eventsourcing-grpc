@@ -34,6 +34,22 @@ class DeadlineExceeded(Exception):
     pass
 
 
+def errors(f: Any) -> Any:
+    @wraps(f)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return f(*args, **kwargs)
+        except _InactiveRpcError as e:
+            if isinstance(e, _InactiveRpcError):
+                if e._state.code == StatusCode.UNAVAILABLE:
+                    raise ServiceUnavailable(repr(e)) from None
+                elif e._state.code == StatusCode.DEADLINE_EXCEEDED:
+                    raise DeadlineExceeded(repr(e)) from None
+            raise GrpcError(repr(e)) from None
+
+    return wrapper
+
+
 class ApplicationClient(Generic[TApplication]):
     def __init__(
         self,
@@ -45,22 +61,6 @@ class ApplicationClient(Generic[TApplication]):
         self.transcoder = transcoder
         self.channel = None
         self.request_deadline = request_deadline
-
-    @staticmethod
-    def errors(f: Any) -> Any:
-        @wraps(f)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            try:
-                return f(*args, **kwargs)
-            except _InactiveRpcError as e:
-                if isinstance(e, _InactiveRpcError):
-                    if e._state.code == StatusCode.UNAVAILABLE:
-                        raise ServiceUnavailable(repr(e)) from None
-                    elif e._state.code == StatusCode.DEADLINE_EXCEEDED:
-                        raise DeadlineExceeded(repr(e)) from None
-                raise GrpcError(repr(e)) from None
-
-        return wrapper
 
     @property
     def app(self) -> TApplication:
