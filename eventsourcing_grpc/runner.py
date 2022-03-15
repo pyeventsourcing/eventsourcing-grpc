@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
 from itertools import count
 from signal import SIGINT
-from subprocess import STDOUT, Popen, TimeoutExpired
-from threading import Event
+from subprocess import Popen, TimeoutExpired
+from threading import Event, Thread
+from time import sleep
 from typing import Dict, List, Optional, Type, cast
 
 from eventsourcing.application import Application, TApplication
@@ -27,73 +29,103 @@ class GrpcRunner(Runner):
         """
         super().__init__(system=system, env=env)
         self.apps: Dict[str, Application] = {}
-        self.subprocesses: List[Popen[bytes]] = []
+        self.port_generator = count(start=50051)
         self.servers: Dict[str, ApplicationServer] = {}
         self.clients: Dict[str, ApplicationClient[Application]] = {}
-        self.port_generator = count(start=50051)
+        self.subprocesses: List[Popen[bytes]] = []
+        self.threads: List[SubprocessManager] = []
         self.has_errored = Event()
 
-    def start(self, subprocess: bool = False) -> None:
+    def start(self, with_subprocesses: bool = False) -> None:
         super().start()
 
         # Construct followers.
         for follower_name in self.system.followers:
             follower_class = self.system.follower_cls(follower_name)
-            self.start_application(follower_class, subprocess=subprocess)
+            self.start_application(follower_class, with_subprocess=with_subprocesses)
 
         # Construct non-follower leaders.
         for leader_name in self.system.leaders_only:
             leader_cls = self.system.leader_cls(leader_name)
-            self.start_application(leader_cls, subprocess=subprocess)
+            self.start_application(leader_cls, with_subprocess=with_subprocesses)
 
         # Construct singles.
         for name in self.system.singles:
             single_cls = self.system.get_app_cls(name)
-            self.start_application(single_cls, subprocess=subprocess)
+            self.start_application(single_cls, with_subprocess=with_subprocesses)
 
-        # Construct clients.
-        for application in self.apps.values():
-            address = get_grpc_address(application.name, self.env)
-            client: ApplicationClient[Application] = ApplicationClient(
-                address=address, transcoder=application.construct_transcoder()
-            )
-            self.clients[application.name] = client
-            client.connect(timeout=1)
+        if with_subprocesses:
+            self.has_errored.wait(timeout=1)
+            for t in self.threads:
+                if (not t.has_started.wait(timeout=0)) or t.has_errored.is_set():
+                    self.stop()
+                    raise Exception("Failed to start sub processes")
 
         if self.env and "SYSTEM_TOPIC" not in self.env:
             # Lead and follow.
+            sleep(0.5)
             for edge in self.system.edges:
                 leader_name = edge[0]
                 follower_name = edge[1]
-                leader_client = self.clients[leader_name]
                 leader_address = get_grpc_address(leader_name, self.env)
-                follower_client = self.clients[follower_name]
                 follower_address = get_grpc_address(follower_name, self.env)
-                follower_client.follow(leader_name, leader_address)
+                leader_client = self.get_client(self.system.get_app_cls(leader_name))
+                follower_client = self.get_client(
+                    self.system.get_app_cls(follower_name)
+                )
                 leader_client.lead(follower_name, follower_address)
+                follower_client.follow(leader_name, leader_address)
 
     def start_application(
-        self, app_class: Type[Application], subprocess: bool = False
+        self, app_class: Type[Application], with_subprocess: bool = False
     ) -> None:
-        application = app_class(env=self.env)
-        self.apps[app_class.name] = application
-        if subprocess is True:
-            application_topic = get_topic(app_class)
-            self.start_subprocess(application_topic)
+        if self.has_errored.is_set():
+            return
+        if with_subprocess is False:
+            self.start_server_inprocess(app_class)
         else:
-            address = get_grpc_address(application.name, self.env)
-            server = ApplicationServer(application=application, address=address)
-            server.start()
-            self.servers[app_class.name] = server
+            self.start_server_subprocess(app_class)
+
+    def start_server_inprocess(self, app_class: Type[Application]) -> None:
+        server = ApplicationServer(
+            application=app_class(env=self.env),
+            address=get_grpc_address(app_class.name, self.env),
+            poll_interval=10,
+        )
+        server.start()
+        self.servers[app_class.name] = server
+
+    def start_server_subprocess(self, app_class: Type[Application]) -> None:
+        print("Starting server", app_class)
+        thread = SubprocessManager(app_class, self.env or {}, self.has_errored)
+        self.threads.append(thread)
+        thread.start()
+        thread.has_started.wait()
+        self.subprocesses.append(thread.process)
 
     def get_client(self, cls: Type[TApplication]) -> ApplicationClient[TApplication]:
-        return cast(ApplicationClient[TApplication], self.clients[cls.name])
+        try:
+            client = self.clients[cls.name]
+        except KeyError:
+            env = dict(self.env or {})
+            env.pop("INFRASTRUCTURE_FACTORY", None)
+            env.pop("FACTORY_TOPIC", None)
+            env.pop("PERSISTENCE_MODULE", None)
+            transcoder = cls(env=env).construct_transcoder()
+            address = get_grpc_address(cls(env=env).name, self.env)
+            client = ApplicationClient(address=address, transcoder=transcoder)
+            client.connect()
+            self.clients[cls.name] = client
+        return cast(ApplicationClient[TApplication], client)
 
     def get(self, cls: Type[TApplication]) -> TApplication:
         return cast(ApplicationClient[TApplication], self.clients[cls.name]).app
 
     def get_app(self, cls: Type[TApplication]) -> TApplication:
         return cast(TApplication, self.apps[cls.name])
+
+    def __del__(self) -> None:
+        self.stop()
 
     def stop(self) -> None:
         for client in self.clients.values():
@@ -110,16 +142,6 @@ class GrpcRunner(Runner):
         for app in self.apps.values():
             app.close()
         self.apps.clear()
-
-    def start_subprocess(self, application_topic: str) -> None:
-        process = Popen(
-            [sys.executable, __file__, application_topic],
-            stderr=STDOUT,
-            close_fds=True,
-            env=self.env,
-        )
-        # print("Started process:", process)
-        self.subprocesses.append(process)
 
     def stop_subprocess(self, process: Popen[bytes]) -> None:
         """
@@ -145,8 +167,78 @@ class GrpcRunner(Runner):
                 process.kill()
             print("Processor exit code: %s" % process.poll())
 
-    def __del__(self) -> None:
-        self.stop()
+
+class SubprocessManager(Thread):
+    def __init__(
+        self, app_class: Type[Application], env: EnvType, has_errored: Event
+    ) -> None:
+        super().__init__(daemon=True)
+        self.app_class = app_class
+        self.env = env
+        self.has_errored = has_errored
+        self.has_started = Event()
+
+    def run(self) -> None:
+        try:
+            env = dict(self.env)
+            env["APPLICATION_TOPIC"] = get_topic(self.app_class)
+            self.process = Popen(
+                [sys.executable, __file__],
+                close_fds=True,
+                env=env,
+            )
+        except BaseException:
+            self.has_errored.set()
+        finally:
+            self.has_started.set()
+        if self.process.wait():
+            self.has_errored.set()
+        print("Subprocess exited, status code", self.process.returncode)
+
+
+def run_application_server() -> None:
+    application_topic = os.environ["APPLICATION_TOPIC"]
+    sys.stdout.write(f"Starting subprocess {application_topic}\n")
+    sys.stdout.flush()
+
+    system_topic = os.environ["SYSTEM_TOPIC"]
+    system = cast(System, resolve_topic(system_topic))
+    app_class = resolve_topic(application_topic)
+
+    # Make sure we have a leader class if leading.
+    if app_class.name in system.leads:
+        app_class = system.leader_cls(app_class.name)
+
+    # Make sure we have a follower class if following.
+    if app_class.name in system.follows:
+        app_class = system.follower_cls(app_class.name)
+
+    # Construct the application object.
+    application = app_class()
+    poll_interval = float(application.env.get("POLL_INTERVAL", 5))
+
+    # Get the address and start the application server.
+    address = get_grpc_address(application.name, os.environ)
+    app_server = ApplicationServer(application, address, poll_interval)
+    app_server.start()
+
+    sleep(0.5)
+
+    # Lead and follow.
+    for follower_name in system.leads[application.name]:
+        follower_address = get_grpc_address(follower_name, os.environ)
+        app_server.service.lead(follower_address)
+    for leader_name in system.follows[application.name]:
+        leader_address = get_grpc_address(leader_name, os.environ)
+        app_server.service.follow(leader_name, leader_address)
+
+    # Wait for termination.
+    try:
+        app_server.server.wait_for_termination()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        app_server.stop()
 
 
 def get_grpc_address(name: str, env: Optional[EnvType]) -> str:
@@ -159,33 +251,9 @@ def get_grpc_address(name: str, env: Optional[EnvType]) -> str:
 
 
 if __name__ == "__main__":
-    # logging.basicConfig(level=DEBUG)
-    application_topic = sys.argv[1]
-
-    # sys.stdout.write(f"Starting subprocess {application_topic}\n")
-    # sys.stdout.flush()
-
-    app_class = resolve_topic(application_topic)
-    application: Application = app_class()
-    app_server = ApplicationServer(
-        application,
-        address=get_grpc_address(application.name, os.environ),
-    )
-    app_server.start()
-
-    system_topic = os.environ.get("SYSTEM_TOPIC", "")
-    if system_topic:
-        system = cast(System, resolve_topic(system_topic))
-        for leader_name in system.follows[application.name]:
-            leader_address = get_grpc_address(leader_name, os.environ)
-            app_server.service.follow(leader_name, leader_address)
-        for follower_name in system.leads[application.name]:
-            follower_address = get_grpc_address(follower_name, os.environ)
-            app_server.service.lead(follower_address)
-
     try:
-        app_server.server.wait_for_termination()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        app_server.stop()
+        run_application_server()
+    except BaseException:
+        print(traceback.format_exc())
+        print("Exiting with status code 1 after error")
+        sys.exit(1)

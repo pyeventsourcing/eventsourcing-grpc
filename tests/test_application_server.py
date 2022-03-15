@@ -1,45 +1,48 @@
 from time import sleep
 from typing import cast
-from unittest import TestCase
+from unittest import TestCase, skip
 from uuid import UUID
 
-from eventsourcing_grpc.application_client import ApplicationClient
+from eventsourcing_grpc.application_client import ApplicationClient, ServiceUnavailable
 from eventsourcing_grpc.application_server import ApplicationServer
-from eventsourcing_grpc.runner import GrpcRunner
-from tests.fixtures import Order, Orders, Reservations, system
+from tests.fixtures import Order, Orders, Reservations
 
 
 class TestApplicationServer(TestCase):
     def test_client_connect_success(self) -> None:
         address = "localhost:50051"
         orders = Orders()
-        server = ApplicationServer(application=orders, address=address)
+        server = ApplicationServer(
+            application=orders, address=address, poll_interval=10
+        )
         server.start()
         client: ApplicationClient[Orders] = ApplicationClient(
             address=address, transcoder=orders.construct_transcoder()
         )
-        client.connect(timeout=1)
+        client.connect()
 
+    @skip("Need to find a faster way to do this")
     def test_client_connect_failure(self) -> None:
-        address = "localhost:50051"
         orders = Orders()
-        server = ApplicationServer(application=orders, address=address)
-        server.start()
         client: ApplicationClient[Orders] = ApplicationClient(
-            address="localhost:50052", transcoder=orders.construct_transcoder()
+            address="localhost:50049",
+            transcoder=orders.construct_transcoder(),
+            request_deadline=1,
         )
-        with self.assertRaises(TimeoutError):
-            client.connect(timeout=0.5)
+        with self.assertRaises(ServiceUnavailable):
+            client.connect()
 
     def test_call_application_method(self) -> None:
         address = "localhost:50051"
         orders = Orders()
-        server = ApplicationServer(application=orders, address=address)
+        server = ApplicationServer(
+            application=orders, address=address, poll_interval=10
+        )
         server.start()
         client: ApplicationClient[Orders] = ApplicationClient(
             address=address, transcoder=orders.construct_transcoder()
         )
-        client.connect(timeout=1)
+        client.connect()
 
         order_id = client.app.create_new_order()
         self.assertIsInstance(order_id, UUID)
@@ -52,12 +55,14 @@ class TestApplicationServer(TestCase):
         # Set up.
         address = "localhost:50051"
         orders = Orders()
-        server = ApplicationServer(application=orders, address=address)
+        server = ApplicationServer(
+            application=orders, address=address, poll_interval=10
+        )
         server.start()
         client: ApplicationClient[Orders] = ApplicationClient(
             address=address, transcoder=orders.construct_transcoder()
         )
-        client.connect(timeout=1)
+        client.connect()
 
         # Create an order.
         order1_id = client.app.create_new_order()
@@ -128,25 +133,27 @@ class TestApplicationServer(TestCase):
         reservations_application = Reservations()
 
         orders_server = ApplicationServer(
-            application=orders_application, address=orders_address
+            application=orders_application, address=orders_address, poll_interval=10
         )
         orders_server.start()
 
         reservations_server = ApplicationServer(
-            application=reservations_application, address=reservations_address
+            application=reservations_application,
+            address=reservations_address,
+            poll_interval=10,
         )
         reservations_server.start()
 
         orders_client: ApplicationClient[Orders] = ApplicationClient(
             address=orders_address, transcoder=orders_application.construct_transcoder()
         )
-        orders_client.connect(timeout=1)
+        orders_client.connect()
 
         reservations_client: ApplicationClient[Orders] = ApplicationClient(
             address=reservations_address,
             transcoder=reservations_application.construct_transcoder(),
         )
-        reservations_client.connect(timeout=1)
+        reservations_client.connect()
 
         reservations_client.follow(name=orders_application.name, address=orders_address)
         orders_client.lead(
@@ -182,66 +189,3 @@ class TestApplicationServer(TestCase):
         self.assertEqual(notifications[1].originator_id, order1_id)
         self.assertEqual(notifications[1].originator_version, 2)
         self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
-
-    def test_runner(self) -> None:
-        self._test_runner(subprocess=False)
-
-    def test_runner_with_subprocess(self) -> None:
-        self._test_runner(subprocess=True)
-
-    def test_runner_with_subprocess_and_system_topic(self) -> None:
-        self._test_runner(subprocess=True, with_system_topic=True)
-
-    def _test_runner(
-        self, subprocess: bool = False, with_system_topic: bool = False
-    ) -> None:
-        # Set up.
-        env = {
-            "ORDERS_GRPC_ADDRESS": "localhost:50051",
-            "RESERVATIONS_GRPC_ADDRESS": "localhost:50052",
-            "PAYMENTS_GRPC_ADDRESS": "localhost:50053",
-        }
-        if with_system_topic:
-            env["SYSTEM_TOPIC"] = "tests.fixtures:system"
-
-        runner = GrpcRunner(system=system, env=env)
-        runner.start(subprocess=subprocess)
-
-        # Create an order.
-        orders = runner.get_client(Orders)
-        order1_id = orders.app.create_new_order()
-        self.assertIsInstance(order1_id, UUID)
-
-        # Wait for the processing to happen.
-        orders_app = runner.get_app(Orders)
-        for _ in range(2000):
-            notifications = orders.get_notifications(start=1, limit=10, topics=[])
-
-            if len(notifications) > 2:
-                break
-            else:
-                sleep(0.1)
-        else:
-            self.fail("Timeout waiting for len notifications > 2")
-
-        # Get the notifications.
-        notifications = orders.get_notifications(start=1, limit=10, topics=[])
-        self.assertEqual(len(notifications), 3)
-        self.assertEqual(notifications[0].id, 1)
-        self.assertEqual(notifications[0].originator_id, order1_id)
-        self.assertEqual(notifications[0].originator_version, 1)
-        self.assertEqual(notifications[0].topic, "tests.fixtures:Order.Created")
-        self.assertEqual(notifications[1].id, 2)
-        self.assertEqual(notifications[1].originator_id, order1_id)
-        self.assertEqual(notifications[1].originator_version, 2)
-        self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
-        self.assertEqual(notifications[2].id, 3)
-        self.assertEqual(notifications[2].originator_id, order1_id)
-        self.assertEqual(notifications[2].originator_version, 3)
-        self.assertEqual(notifications[2].topic, "tests.fixtures:Order.Paid")
-
-        first_event = orders_app.mapper.to_domain_event(notifications[0])
-        last_event = orders_app.mapper.to_domain_event(notifications[-1])
-        duration = last_event.timestamp - first_event.timestamp
-        print("Duration:", duration)
-        runner.stop()

@@ -1,4 +1,4 @@
-from datetime import datetime
+from functools import wraps
 from time import sleep
 from typing import Any, Generic, List, cast
 from uuid import UUID
@@ -6,7 +6,9 @@ from uuid import UUID
 import grpc
 from eventsourcing.application import TApplication
 from eventsourcing.persistence import Notification, Transcoder
-from grpc import RpcError
+from eventsourcing.utils import retry
+from grpc import StatusCode
+from grpc._channel import _InactiveRpcError
 
 from eventsourcing_grpc.protos.application_pb2 import (
     Empty,
@@ -20,43 +22,62 @@ from eventsourcing_grpc.protos.application_pb2 import (
 from eventsourcing_grpc.protos.application_pb2_grpc import ApplicationStub
 
 
+class GrpcError(Exception):
+    pass
+
+
+class ServiceUnavailable(Exception):
+    pass
+
+
+class DeadlineExceeded(Exception):
+    pass
+
+
 class ApplicationClient(Generic[TApplication]):
-    def __init__(self, address: str, transcoder: Transcoder) -> None:
+    def __init__(
+        self,
+        address: str,
+        transcoder: Transcoder,
+        request_deadline: int = 1,
+    ) -> None:
         self.address = address
         self.transcoder = transcoder
         self.channel = None
-        # self.json_encoder = ObjectJSONEncoder()
-        # self.json_decoder = ObjectJSONDecoder()
+        self.request_deadline = request_deadline
+
+    @staticmethod
+    def errors(f: Any) -> Any:
+        @wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return f(*args, **kwargs)
+            except _InactiveRpcError as e:
+                if isinstance(e, _InactiveRpcError):
+                    if e._state.code == StatusCode.UNAVAILABLE:
+                        raise ServiceUnavailable(repr(e)) from None
+                    elif e._state.code == StatusCode.DEADLINE_EXCEEDED:
+                        raise DeadlineExceeded(repr(e)) from None
+                raise GrpcError(repr(e)) from None
+
+        return wrapper
 
     @property
     def app(self) -> TApplication:
         return cast(TApplication, ApplicationProxy(self))
 
-    def connect(self, timeout: float = 5) -> None:
+    def connect(self) -> None:
         """
-        Connect to client to server at given address.
+        Connect client to server at given address.
 
         Calls ping() until it gets a response, or timeout is reached.
         """
         self.close()
         self.channel = grpc.insecure_channel(self.address)
+        # print("Created insecure channel ")
         self.stub = ApplicationStub(self.channel)
-
-        timer_started = datetime.now()
-        while True:
-            # Ping until get a response.
-            try:
-                self.ping()
-            except RpcError as e:
-                if timeout is not None:
-                    timer_duration = (datetime.now() - timer_started).total_seconds()
-                    if timer_duration > timeout:
-                        err_msg = f"RPC error from '{self.address}'"
-                        raise TimeoutError(err_msg) from e
-                sleep(0.1)
-                continue
-            else:
-                break
+        sleep(0.1)
+        self.ping(timeout=self.request_deadline)
 
     def __del__(self) -> None:
         self.close()
@@ -67,13 +88,18 @@ class ApplicationClient(Generic[TApplication]):
         """
         if self.channel is not None:
             self.channel.close()
+            self.channel = None
 
+    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
+    @errors
     def ping(self, timeout: int = 5) -> None:
         """
         Sends a Ping request to the server.
         """
         self.stub.Ping(Empty(), timeout=timeout)
 
+    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
+    @errors
     def get_notifications(
         self, start: int, limit: int, topics: List[str]
     ) -> List[Notification]:
@@ -93,14 +119,39 @@ class ApplicationClient(Generic[TApplication]):
             for n in notifications_reply.notifications
         ]
 
+    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
+    @errors
     def follow(self, name: str, address: str) -> None:
-        self.stub.Follow(FollowRequest(name=name, address=address), timeout=5)
+        self.stub.Follow(
+            FollowRequest(name=name, address=address), timeout=self.request_deadline
+        )
 
+    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
+    @errors
     def lead(self, name: str, address: str) -> None:
-        self.stub.Lead(LeadRequest(name=name, address=address), timeout=5)
+        self.stub.Lead(
+            LeadRequest(name=name, address=address), timeout=self.request_deadline
+        )
 
+    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
+    @errors
     def prompt(self, name: str) -> None:
-        self.stub.Prompt(PromptRequest(upstream_name=name), timeout=5)
+        self.stub.Prompt(
+            PromptRequest(upstream_name=name), timeout=self.request_deadline
+        )
+
+    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
+    @errors
+    def call_application_method(self, method_name: str, args: Any, kwargs: Any) -> Any:
+        request = MethodRequest(
+            method_name=method_name,
+            args=self.transcoder.encode(args),
+            kwargs=self.transcoder.encode(kwargs),
+        )
+        response = self.stub.CallApplicationMethod(
+            request, timeout=self.request_deadline
+        )
+        return self.transcoder.decode(response.data)
 
 
 class MethodProxy:
@@ -112,13 +163,7 @@ class MethodProxy:
         """
         Calls named method on server's application with given args.
         """
-        request = MethodRequest(
-            method_name=self.method_name,
-            args=self.client.transcoder.encode(args),
-            kwargs=self.client.transcoder.encode(kwargs),
-        )
-        response = self.client.stub.CallApplicationMethod(request, timeout=5)
-        return self.client.transcoder.decode(response.data)
+        return self.client.call_application_method(self.method_name, args, kwargs)
 
 
 class ApplicationProxy:

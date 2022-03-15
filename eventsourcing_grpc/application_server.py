@@ -1,3 +1,4 @@
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from typing import Dict, List, Optional, Sequence
@@ -65,16 +66,17 @@ class GRPCRecordingEventReceiver(RecordingEventReceiver):
 
 
 class ApplicationService(ApplicationServicer):
-    def __init__(self, application: Application) -> None:
+    def __init__(self, application: Application, poll_interval: float) -> None:
+        self.application = application
+        self.poll_interval = poll_interval
         self.clients_lock = Lock()
         self.clients: Dict[str, ApplicationClient[Application]] = {}
-        self.application = application
         self.transcoder = application.construct_transcoder()
-        self.is_stopping = Event()
-        self.has_started = Event()
         self.is_prompted = Event()
         self.prompted_names: List[str] = []
         self.prompted_names_lock = Lock()
+        self.is_stopping = Event()
+        self.has_started = Event()
 
     def Ping(self, request: Empty, context: Context) -> Empty:
         return Empty()
@@ -132,7 +134,7 @@ class ApplicationService(ApplicationServicer):
                     address=address,
                     transcoder=self.application.construct_transcoder(),
                 )
-                client.connect(timeout=5)
+                client.connect()
                 self.clients[address] = client
             return client
 
@@ -149,14 +151,16 @@ class ApplicationService(ApplicationServicer):
 
     def Prompt(self, request: PromptRequest, context: Context) -> Empty:
         leader_name = request.upstream_name
+        self.prompt(leader_name)
+        return Empty()
+
+    def prompt(self, leader_name: str) -> None:
         with self.prompted_names_lock:
             if leader_name not in self.prompted_names:
                 self.prompted_names.append(leader_name)
             self.is_prompted.set()
-        return Empty()
 
     def run(self) -> None:
-        assert isinstance(self.application, Follower)
         while not self.is_stopping.is_set():
             self.is_prompted.wait()
 
@@ -166,38 +170,63 @@ class ApplicationService(ApplicationServicer):
                 self.is_prompted.clear()
             for name in prompted_names:
                 try:
+                    assert isinstance(self.application, Follower)
                     self.application.pull_and_process(name)
                 except Exception as e:
                     error = EventProcessingError(str(e))
                     error.__cause__ = e
                     # Todo: Log the error.
-                    print("Event processing error:", error)
+                    print("Event processing error:", traceback.format_exc())
+                    with self.prompted_names_lock:
+                        self.prompted_names.append(name)
+
+    def self_prompt(self) -> None:
+        if isinstance(self.application, Follower):
+            while not self.is_stopping.wait(timeout=self.poll_interval):
+                print("Polling")
+                for leader_name in self.application.readers:
+                    self.prompt(leader_name)
 
     def stop(self) -> None:
         self.is_stopping.set()
         self.is_prompted.set()
+        for client in self.clients.values():
+            client.close()
 
 
 class ApplicationServer:
-    def __init__(self, application: Application, address: str) -> None:
+    def __init__(
+        self, application: Application, address: str, poll_interval: float
+    ) -> None:
+        self.has_stopped = Event()
         self.application = application
         self.address = address
+        self.poll_interval = poll_interval
 
     def start(self) -> None:
         """
         Starts gRPC server.
         """
-        self.executor = ThreadPoolExecutor(max_workers=10)
+        # print("Starting application server:", self.application.name)
+        self.executor = ThreadPoolExecutor()
         self.server = grpc.server(self.executor)
-        self.service = ApplicationService(self.application)
+        self.service = ApplicationService(
+            self.application, poll_interval=self.poll_interval
+        )
         self.executor.submit(self.service.run)
+        self.executor.submit(self.service.self_prompt)
         add_ApplicationServicer_to_server(self.service, self.server)
         self.server.add_insecure_port(self.address)
         self.server.start()
+        # print("Started application server:", self.application.name)
 
-    def stop(self, grace: int = 1) -> None:
+    def stop(self, grace: int = 5) -> None:
+        self.has_stopped.set()
+        # print("Stopping application server:", self.application.name)
         self.service.stop()
         self.server.stop(grace=grace)
+        # print("Stopped application server:", self.application.name)
 
     def __del__(self) -> None:
-        self.stop()
+        if not self.has_stopped.is_set():
+            self.stop()
