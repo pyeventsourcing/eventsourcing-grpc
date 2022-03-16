@@ -17,7 +17,9 @@ class TestApplicationServer(TestCase):
         )
         server.start()
         client: ApplicationClient[Orders] = ApplicationClient(
-            address=address, transcoder=orders.construct_transcoder()
+            client_name="test",
+            address=address,
+            transcoder=orders.construct_transcoder(),
         )
         client.connect()
 
@@ -25,9 +27,9 @@ class TestApplicationServer(TestCase):
     def test_client_connect_failure(self) -> None:
         orders = Orders()
         client: ApplicationClient[Orders] = ApplicationClient(
+            client_name="test",
             address="localhost:50049",
             transcoder=orders.construct_transcoder(),
-            request_deadline=1,
         )
         with self.assertRaises(ServiceUnavailable):
             client.connect()
@@ -40,7 +42,9 @@ class TestApplicationServer(TestCase):
         )
         server.start()
         client: ApplicationClient[Orders] = ApplicationClient(
-            address=address, transcoder=orders.construct_transcoder()
+            client_name="test",
+            address=address,
+            transcoder=orders.construct_transcoder(),
         )
         client.connect()
 
@@ -60,7 +64,9 @@ class TestApplicationServer(TestCase):
         )
         server.start()
         client: ApplicationClient[Orders] = ApplicationClient(
-            address=address, transcoder=orders.construct_transcoder()
+            client_name="test",
+            address=address,
+            transcoder=orders.construct_transcoder(),
         )
         client.connect()
 
@@ -145,11 +151,14 @@ class TestApplicationServer(TestCase):
         reservations_server.start()
 
         orders_client: ApplicationClient[Orders] = ApplicationClient(
-            address=orders_address, transcoder=orders_application.construct_transcoder()
+            client_name="test",
+            address=orders_address,
+            transcoder=orders_application.construct_transcoder(),
         )
         orders_client.connect()
 
         reservations_client: ApplicationClient[Orders] = ApplicationClient(
+            client_name="test",
             address=reservations_address,
             transcoder=reservations_application.construct_transcoder(),
         )

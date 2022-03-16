@@ -103,6 +103,7 @@ class Orders(ProcessApplication):
             assert not order.is_reserved
             order.set_is_reserved(domain_event.originator_id)
             processing_event.collect_events(order)
+            # print("Order was reserved")
 
         elif isinstance(domain_event, Payment.Created):
             # Set the order as paid.
@@ -110,11 +111,13 @@ class Orders(ProcessApplication):
             assert not order.is_paid
             order.set_is_paid(domain_event.originator_id)
             processing_event.collect_events(order)
+            # print("Order was paid")
 
     @retry((OperationalError, RecordConflictError), max_attempts=10, wait=0.01)
     def create_new_order(self) -> UUID:
         order = Order()
         self.save(order)
+        # print("Order was created")
         return order.id
 
     def is_order_reserved(self, order_id: UUID) -> bool:

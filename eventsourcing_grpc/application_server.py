@@ -1,6 +1,7 @@
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
+from time import sleep, time
 from typing import Dict, List, Optional, Sequence
 
 import grpc
@@ -18,7 +19,7 @@ from eventsourcing.system import (
 )
 from grpc._server import _Context as Context
 
-from eventsourcing_grpc.application_client import ApplicationClient
+from eventsourcing_grpc.application_client import ApplicationClient, GrpcError
 from eventsourcing_grpc.protos.application_pb2 import (
     Empty,
     FollowRequest,
@@ -62,11 +63,16 @@ class GRPCRecordingEventReceiver(RecordingEventReceiver):
         self.client = client
 
     def receive_recording_event(self, recording_event: RecordingEvent) -> None:
-        self.client.prompt(name=recording_event.application_name)
+        try:
+            self.client.prompt(name=recording_event.application_name)
+        except GrpcError:
+            # Todo: Log failure to prompt downstream application.
+            pass
 
 
 class ApplicationService(ApplicationServicer):
     def __init__(self, application: Application, poll_interval: float) -> None:
+        self.last_pull_times: Dict[str, float] = {}
         self.application = application
         self.poll_interval = poll_interval
         self.clients_lock = Lock()
@@ -131,6 +137,7 @@ class ApplicationService(ApplicationServicer):
                 client = self.clients[address]
             except KeyError:
                 client = ApplicationClient(
+                    client_name=self.application.name,
                     address=address,
                     transcoder=self.application.construct_transcoder(),
                 )
@@ -158,7 +165,7 @@ class ApplicationService(ApplicationServicer):
         with self.prompted_names_lock:
             if leader_name not in self.prompted_names:
                 self.prompted_names.append(leader_name)
-            self.is_prompted.set()
+                self.is_prompted.set()
 
     def run(self) -> None:
         while not self.is_stopping.is_set():
@@ -171,21 +178,34 @@ class ApplicationService(ApplicationServicer):
             for name in prompted_names:
                 try:
                     assert isinstance(self.application, Follower)
-                    self.application.pull_and_process(name)
+                    if name not in self.application.readers:
+                        # print(f"{self.application.name} can't pull
+                        # from {name} without reader")
+                        self.prompt(name)
+                        sleep(1)
+                    else:
+                        self.application.pull_and_process(name)
+                        self.last_pull_times[name] = time()
                 except Exception as e:
                     error = EventProcessingError(str(e))
                     error.__cause__ = e
                     # Todo: Log the error.
-                    print("Event processing error:", traceback.format_exc())
-                    with self.prompted_names_lock:
-                        self.prompted_names.append(name)
+                    print(
+                        f"Error in {self.application.name} processing {name} events:",
+                        traceback.format_exc(),
+                    )
+                    self.prompt(name)
+                    # print("Sleeping after error....")
+                    sleep(1)
 
     def self_prompt(self) -> None:
         if isinstance(self.application, Follower):
             while not self.is_stopping.wait(timeout=self.poll_interval):
-                print("Polling")
                 for leader_name in self.application.readers:
-                    self.prompt(leader_name)
+                    last_pull_time = self.last_pull_times.get(leader_name, 0)
+                    if time() - last_pull_time > self.poll_interval:
+                        # print(f"{time()} {self.application.name} polling {leader_name}")
+                        self.prompt(leader_name)
 
     def stop(self) -> None:
         self.is_stopping.set()
@@ -202,6 +222,8 @@ class ApplicationServer:
         self.application = application
         self.address = address
         self.poll_interval = poll_interval
+        self.maximum_concurrent_rpcs = None
+        self.compression = None
 
     def start(self) -> None:
         """
@@ -209,7 +231,11 @@ class ApplicationServer:
         """
         # print("Starting application server:", self.application.name)
         self.executor = ThreadPoolExecutor()
-        self.server = grpc.server(self.executor)
+        self.server = grpc.server(
+            thread_pool=self.executor,
+            maximum_concurrent_rpcs=self.maximum_concurrent_rpcs,
+            compression=self.compression,
+        )
         self.service = ApplicationService(
             self.application, poll_interval=self.poll_interval
         )
@@ -220,7 +246,7 @@ class ApplicationServer:
         self.server.start()
         # print("Started application server:", self.application.name)
 
-    def stop(self, grace: int = 5) -> None:
+    def stop(self, grace: int = 30) -> None:
         self.has_stopped.set()
         # print("Stopping application server:", self.application.name)
         self.service.stop()

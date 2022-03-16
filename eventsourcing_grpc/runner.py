@@ -7,7 +7,6 @@ from itertools import count
 from signal import SIGINT
 from subprocess import Popen, TimeoutExpired
 from threading import Event, Thread
-from time import sleep
 from typing import Dict, List, Optional, Type, cast
 
 from eventsourcing.application import Application, TApplication
@@ -61,9 +60,9 @@ class GrpcRunner(Runner):
                     self.stop()
                     raise Exception("Failed to start sub processes")
 
-        if self.env and "SYSTEM_TOPIC" not in self.env:
+        else:
             # Lead and follow.
-            sleep(0.5)
+            # sleep(0.5)
             for edge in self.system.edges:
                 leader_name = edge[0]
                 follower_name = edge[1]
@@ -90,13 +89,13 @@ class GrpcRunner(Runner):
         server = ApplicationServer(
             application=app_class(env=self.env),
             address=get_grpc_address(app_class.name, self.env),
-            poll_interval=10,
+            poll_interval=get_poll_interval(app_class.name, self.env),
         )
         server.start()
         self.servers[app_class.name] = server
 
     def start_server_subprocess(self, app_class: Type[Application]) -> None:
-        print("Starting server", app_class)
+        # print("Starting server", app_class)
         thread = SubprocessManager(app_class, self.env or {}, self.has_errored)
         self.threads.append(thread)
         thread.start()
@@ -113,7 +112,9 @@ class GrpcRunner(Runner):
             env.pop("PERSISTENCE_MODULE", None)
             transcoder = cls(env=env).construct_transcoder()
             address = get_grpc_address(cls(env=env).name, self.env)
-            client = ApplicationClient(address=address, transcoder=transcoder)
+            client = ApplicationClient(
+                client_name="runner", address=address, transcoder=transcoder
+            )
             client.connect()
             self.clients[cls.name] = client
         return cast(ApplicationClient[TApplication], client)
@@ -165,7 +166,7 @@ class GrpcRunner(Runner):
             except TimeoutExpired:
                 print("Timed out waiting for process to terminate. Killing....")
                 process.kill()
-            print("Processor exit code: %s" % process.poll())
+            # print("Processor exit code: %s" % process.poll())
 
 
 class SubprocessManager(Thread):
@@ -193,12 +194,12 @@ class SubprocessManager(Thread):
             self.has_started.set()
         if self.process.wait():
             self.has_errored.set()
-        print("Subprocess exited, status code", self.process.returncode)
+        # print("Subprocess exited, status code", self.process.returncode)
 
 
-def run_application_server() -> None:
+def start_application_server() -> None:
     application_topic = os.environ["APPLICATION_TOPIC"]
-    sys.stdout.write(f"Starting subprocess {application_topic}\n")
+    # sys.stdout.write(f"Starting subprocess {application_topic}\n")
     sys.stdout.flush()
 
     system_topic = os.environ["SYSTEM_TOPIC"]
@@ -215,22 +216,22 @@ def run_application_server() -> None:
 
     # Construct the application object.
     application = app_class()
-    poll_interval = float(application.env.get("POLL_INTERVAL", 5))
+    poll_interval = get_poll_interval(app_class.name, os.environ)
 
     # Get the address and start the application server.
     address = get_grpc_address(application.name, os.environ)
     app_server = ApplicationServer(application, address, poll_interval)
     app_server.start()
 
-    sleep(0.5)
-
     # Lead and follow.
     for follower_name in system.leads[application.name]:
         follower_address = get_grpc_address(follower_name, os.environ)
         app_server.service.lead(follower_address)
+        # print(application.name, "is leading", follower_name)
     for leader_name in system.follows[application.name]:
         leader_address = get_grpc_address(leader_name, os.environ)
         app_server.service.follow(leader_name, leader_address)
+        # print(application.name, "is following", leader_name)
 
     # Wait for termination.
     try:
@@ -250,10 +251,25 @@ def get_grpc_address(name: str, env: Optional[EnvType]) -> str:
         return address
 
 
+def get_poll_interval(name: str, env: Optional[EnvType]) -> float:
+    env = Environment(name=name, env=env)
+    poll_interval_str = env.get("POLL_INTERVAL")
+    if not poll_interval_str:
+        raise ValueError("POLL_INTERVAL not found in environment")
+    try:
+        poll_interval = float(poll_interval_str)
+    except ValueError:
+        raise ValueError(
+            f"Could not covert POLL_INTERVAL string to float: {poll_interval_str}"
+        ) from None
+    else:
+        return poll_interval
+
+
 if __name__ == "__main__":
     try:
-        run_application_server()
+        start_application_server()
     except BaseException:
         print(traceback.format_exc())
-        print("Exiting with status code 1 after error")
+        # print("Exiting with status code 1 after error")
         sys.exit(1)

@@ -1,13 +1,19 @@
 from functools import wraps
-from time import sleep
-from typing import Any, Generic, List, cast
+from time import time
+from typing import Any, Generic, List, Optional, cast
 from uuid import UUID
 
 import grpc
 from eventsourcing.application import TApplication
 from eventsourcing.persistence import Notification, Transcoder
 from eventsourcing.utils import retry
-from grpc import StatusCode
+from grpc import (
+    Channel,
+    ChannelConnectivity,
+    FutureTimeoutError,
+    StatusCode,
+    channel_ready_future,
+)
 from grpc._channel import _InactiveRpcError
 
 from eventsourcing_grpc.protos.application_pb2 import (
@@ -34,12 +40,23 @@ class DeadlineExceeded(Exception):
     pass
 
 
+class ChannelConnectTimeout(Exception):
+    pass
+
+
+class ChannelNotRunning(Exception):
+    pass
+
+
 def errors(f: Any) -> Any:
     @wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return f(*args, **kwargs)
         except _InactiveRpcError as e:
+            # print(f"Error from {args[0].client_name} to {args[0].address}
+            # calling func:", f, repr(e))
+
             if isinstance(e, _InactiveRpcError):
                 if e._state.code == StatusCode.UNAVAILABLE:
                     raise ServiceUnavailable(repr(e)) from None
@@ -53,31 +70,55 @@ def errors(f: Any) -> Any:
 class ApplicationClient(Generic[TApplication]):
     def __init__(
         self,
+        client_name: str,
         address: str,
         transcoder: Transcoder,
-        request_deadline: int = 1,
+        request_deadline: int = 5,
     ) -> None:
+        self.client_name = client_name
         self.address = address
         self.transcoder = transcoder
-        self.channel = None
+        self.channel: Optional[Channel] = None
         self.request_deadline = request_deadline
 
     @property
     def app(self) -> TApplication:
         return cast(TApplication, ApplicationProxy(self))
 
-    def connect(self) -> None:
+    def connect(self, max_attempts: int = 0) -> None:
         """
         Connect client to server at given address.
-
-        Calls ping() until it gets a response, or timeout is reached.
         """
-        self.close()
-        self.channel = grpc.insecure_channel(self.address)
-        # print("Created insecure channel ")
-        self.stub = ApplicationStub(self.channel)
-        sleep(0.1)
-        self.ping(timeout=self.request_deadline)
+        attempts = 0
+        while True:
+            attempts += 1
+            start = time()
+            self.close()
+            # Todo: Support secure channels.
+            self.channel = grpc.insecure_channel(self.address)
+            self.channel.subscribe(self.handle_channel_state_change)
+            future = channel_ready_future(self.channel)
+            connect_deadline = min(0.5 * attempts, self.request_deadline)
+            try:
+                future.result(timeout=connect_deadline)
+            except FutureTimeoutError:
+                print(
+                    f"Client {self.client_name} timed out connecting to",
+                    f"address {self.address}",
+                    f"after {(time() - start):.2f}s",
+                    f"(attempt {attempts})",
+                )
+                if max_attempts - attempts == 0:
+                    raise ChannelConnectTimeout(self.address) from None
+                else:
+                    continue
+            self.stub = ApplicationStub(self.channel)
+            break
+
+    def handle_channel_state_change(
+        self, channel_connectivity: ChannelConnectivity
+    ) -> None:
+        print("Channel state change:", channel_connectivity)
 
     def __del__(self) -> None:
         self.close()
@@ -86,19 +127,20 @@ class ApplicationClient(Generic[TApplication]):
         """
         Closes the client's GPRC channel.
         """
-        if self.channel is not None:
+        if hasattr(self, "channel") and self.channel is not None:
             self.channel.close()
             self.channel = None
+        # Todo: Deal with calls when stub is None.
+        if hasattr(self, "stub"):
+            self.stub = None
 
-    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
     @errors
-    def ping(self, timeout: int = 5) -> None:
+    def ping(self) -> None:
         """
         Sends a Ping request to the server.
         """
-        self.stub.Ping(Empty(), timeout=timeout)
+        self.stub.Ping(Empty(), timeout=self.request_deadline)
 
-    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
     @errors
     def get_notifications(
         self, start: int, limit: int, topics: List[str]
@@ -135,7 +177,6 @@ class ApplicationClient(Generic[TApplication]):
             LeadRequest(name=name, address=address), timeout=self.request_deadline
         )
 
-    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
     @errors
     def prompt(self, name: str) -> None:
         self.stub.Prompt(
@@ -156,7 +197,7 @@ class ApplicationClient(Generic[TApplication]):
         return self.transcoder.decode(response.data)
 
 
-class MethodProxy:
+class ApplicationMethodProxy:
     def __init__(self, client: ApplicationClient[TApplication], method_name: str):
         self.client = client
         self.method_name = method_name
@@ -172,5 +213,5 @@ class ApplicationProxy:
     def __init__(self, client: ApplicationClient[TApplication]) -> None:
         self.client = client
 
-    def __getattr__(self, item: str) -> MethodProxy:
-        return MethodProxy(self.client, item)
+    def __getattr__(self, item: str) -> ApplicationMethodProxy:
+        return ApplicationMethodProxy(self.client, item)
