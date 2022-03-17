@@ -22,7 +22,9 @@ include = ["eventsourcing-grpc/py.typed"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-eventsourcing = { version = "~9.2.3" }
+#eventsourcing = { version = "~9.2.3" }
+eventsourcing = { git = "https://github.com/pyeventsourcing/eventsourcing.git", branch = "9.2"}
+
 grpcio = "~1.44.0"
 
 [tool.poetry.dev-dependencies]
