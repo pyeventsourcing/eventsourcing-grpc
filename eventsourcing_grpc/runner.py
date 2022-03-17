@@ -11,10 +11,10 @@ from typing import Dict, List, Optional, Type, cast
 
 from eventsourcing.application import Application, TApplication
 from eventsourcing.system import Runner, System
-from eventsourcing.utils import Environment, EnvType, get_topic, resolve_topic
+from eventsourcing.utils import EnvType, get_topic, resolve_topic
 
 from eventsourcing_grpc.application_client import ApplicationClient
-from eventsourcing_grpc.application_server import ApplicationServer
+from eventsourcing_grpc.application_server import ApplicationServer, GrpcEnvironment
 
 
 class GrpcRunner(Runner):
@@ -27,6 +27,14 @@ class GrpcRunner(Runner):
         Initialises runner with the given :class:`System`.
         """
         super().__init__(system=system, env=env)
+
+        self._env = dict()
+        if system.topic:
+            self._env["SYSTEM_TOPIC"] = system.topic
+        self._env.update(os.environ)
+        if env is not None:
+            self._env.update(env)
+
         self.apps: Dict[str, Application] = {}
         self.port_generator = count(start=50051)
         self.servers: Dict[str, ApplicationServer] = {}
@@ -60,21 +68,6 @@ class GrpcRunner(Runner):
                     self.stop()
                     raise Exception("Failed to start sub processes")
 
-        else:
-            # Lead and follow.
-            # sleep(0.5)
-            for edge in self.system.edges:
-                leader_name = edge[0]
-                follower_name = edge[1]
-                leader_address = get_grpc_address(leader_name, self.env)
-                follower_address = get_grpc_address(follower_name, self.env)
-                leader_client = self.get_client(self.system.get_app_cls(leader_name))
-                follower_client = self.get_client(
-                    self.system.get_app_cls(follower_name)
-                )
-                leader_client.lead(follower_name, follower_address)
-                follower_client.follow(leader_name, leader_address)
-
     def start_application(
         self, app_class: Type[Application], with_subprocess: bool = False
     ) -> None:
@@ -86,17 +79,15 @@ class GrpcRunner(Runner):
             self.start_server_subprocess(app_class)
 
     def start_server_inprocess(self, app_class: Type[Application]) -> None:
-        server = ApplicationServer(
-            application=app_class(env=self.env),
-            address=get_grpc_address(app_class.name, self.env),
-            poll_interval=get_poll_interval(app_class.name, self.env),
-        )
+        server = ApplicationServer(app_class=app_class, env=self._env)
         server.start()
         self.servers[app_class.name] = server
 
     def start_server_subprocess(self, app_class: Type[Application]) -> None:
         # print("Starting server", app_class)
-        thread = SubprocessManager(app_class, self.env or {}, self.has_errored)
+        thread = SubprocessManager(
+            app_class=app_class, env=self._env, has_errored=self.has_errored
+        )
         self.threads.append(thread)
         thread.start()
         thread.has_started.wait()
@@ -107,11 +98,9 @@ class GrpcRunner(Runner):
             client = self.clients[cls.name]
         except KeyError:
             env = dict(self.env or {})
-            env.pop("INFRASTRUCTURE_FACTORY", None)
-            env.pop("FACTORY_TOPIC", None)
-            env.pop("PERSISTENCE_MODULE", None)
+            env["PERSISTENCE_MODULE"] = "eventsourcing.popo"
             transcoder = cls(env=env).construct_transcoder()
-            address = get_grpc_address(cls(env=env).name, self.env)
+            address = GrpcEnvironment(self._env).get_grpc_address(cls.name)
             client = ApplicationClient(
                 client_name="runner", address=address, transcoder=transcoder
             )
@@ -214,56 +203,17 @@ def start_application_server() -> None:
     if app_class.name in system.follows:
         app_class = system.follower_cls(app_class.name)
 
-    # Construct the application object.
-    application = app_class()
-    poll_interval = get_poll_interval(app_class.name, os.environ)
-
     # Get the address and start the application server.
-    address = get_grpc_address(application.name, os.environ)
-    app_server = ApplicationServer(application, address, poll_interval)
+    app_server = ApplicationServer(app_class=app_class, env=os.environ)
     app_server.start()
-
-    # Lead and follow.
-    for follower_name in system.leads[application.name]:
-        follower_address = get_grpc_address(follower_name, os.environ)
-        app_server.service.lead(follower_address)
-        # print(application.name, "is leading", follower_name)
-    for leader_name in system.follows[application.name]:
-        leader_address = get_grpc_address(leader_name, os.environ)
-        app_server.service.follow(leader_name, leader_address)
-        # print(application.name, "is following", leader_name)
 
     # Wait for termination.
     try:
-        app_server.server.wait_for_termination()
+        app_server.wait_for_termination()
     except KeyboardInterrupt:
         pass
     finally:
         app_server.stop()
-
-
-def get_grpc_address(name: str, env: Optional[EnvType]) -> str:
-    env = Environment(name=name, env=env)
-    address = env.get("GRPC_ADDRESS")
-    if not address:
-        raise ValueError("GRPC address not found in environment")
-    else:
-        return address
-
-
-def get_poll_interval(name: str, env: Optional[EnvType]) -> float:
-    env = Environment(name=name, env=env)
-    poll_interval_str = env.get("POLL_INTERVAL")
-    if not poll_interval_str:
-        raise ValueError("POLL_INTERVAL not found in environment")
-    try:
-        poll_interval = float(poll_interval_str)
-    except ValueError:
-        raise ValueError(
-            f"Could not covert POLL_INTERVAL string to float: {poll_interval_str}"
-        ) from None
-    else:
-        return poll_interval
 
 
 if __name__ == "__main__":

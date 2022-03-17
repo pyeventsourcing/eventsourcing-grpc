@@ -7,6 +7,13 @@ from uuid import UUID
 from eventsourcing_grpc.runner import GrpcRunner
 from tests.fixtures import Orders, system
 
+system_env = {
+    "ORDERS_GRPC_APPLICATION_ADDRESS": "localhost:50051",
+    "RESERVATIONS_GRPC_APPLICATION_ADDRESS": "localhost:50052",
+    "PAYMENTS_GRPC_APPLICATION_ADDRESS": "localhost:50053",
+    "POLL_INTERVAL": "1",
+}
+
 
 class TestRunner(TestCase):
     def test_runner_with_in_process_servers(self) -> None:
@@ -26,21 +33,10 @@ class TestRunner(TestCase):
 
     def _test_runner(self, with_subprocesses: bool = False) -> None:
         # Set up.
-        env = {
-            "ORDERS_GRPC_ADDRESS": "localhost:50051",
-            "RESERVATIONS_GRPC_ADDRESS": "localhost:50052",
-            "PAYMENTS_GRPC_ADDRESS": "localhost:50053",
-            "POLL_INTERVAL": "1",
-        }
-        if with_subprocesses:
-            env["SYSTEM_TOPIC"] = "tests.fixtures:system"
-
-        runner = GrpcRunner(system=system, env=env)
+        runner = GrpcRunner(system=system, env=system_env)
         runner.start(with_subprocesses=with_subprocesses)
         if runner.has_errored.is_set():
             self.fail("Couldn't start runner")
-
-        # sleep(1)
 
         # Create an order.
         orders = runner.get_client(Orders)
@@ -85,9 +81,9 @@ class TestRunner(TestCase):
     def _long_runner(self, with_subprocesses: bool = False) -> None:
         # Set up.
         env = {
-            "ORDERS_GRPC_ADDRESS": "localhost:50051",
-            "RESERVATIONS_GRPC_ADDRESS": "localhost:50052",
-            "PAYMENTS_GRPC_ADDRESS": "localhost:50053",
+            "ORDERS_GRPC_APPLICATION_ADDRESS": "localhost:50051",
+            "RESERVATIONS_GRPC_APPLICATION_ADDRESS": "localhost:50052",
+            "PAYMENTS_GRPC_APPLICATION_ADDRESS": "localhost:50053",
             "POLL_INTERVAL": "1",
         }
         if with_subprocesses:

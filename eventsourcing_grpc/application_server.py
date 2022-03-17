@@ -2,7 +2,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from time import sleep, time
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Type, cast
 
 import grpc
 from eventsourcing.application import (
@@ -16,7 +16,9 @@ from eventsourcing.system import (
     Follower,
     Leader,
     RecordingEventReceiver,
+    System,
 )
+from eventsourcing.utils import Environment, EnvType, resolve_topic
 from grpc._server import _Context as Context
 
 from eventsourcing_grpc.application_client import ApplicationClient, GrpcError
@@ -214,45 +216,99 @@ class ApplicationService(ApplicationServicer):
             client.close()
 
 
+class GrpcEnvironment:
+    def __init__(self, env: EnvType):
+        self.env = env
+
+    def get_grpc_address(self, name: str) -> str:
+        env = Environment(name=name, env=self.env)
+        address = env.get("GRPC_APPLICATION_ADDRESS")
+        if not address:
+            raise ValueError("GRPC address not found in environment")
+        else:
+            return address
+
+    def get_poll_interval(self, name: str) -> float:
+        env = Environment(name=name, env=self.env)
+        poll_interval_str = env.get("POLL_INTERVAL")
+        if not poll_interval_str:
+            raise ValueError("POLL_INTERVAL not found in environment")
+        try:
+            poll_interval = float(poll_interval_str)
+        except ValueError:
+            raise ValueError(
+                f"Could not covert POLL_INTERVAL string to float: {poll_interval_str}"
+            ) from None
+        else:
+            return poll_interval
+
+    def get_system(self) -> System:
+        system_topic = self.env["SYSTEM_TOPIC"]
+        return cast(System, resolve_topic(system_topic))
+
+
 class ApplicationServer:
-    def __init__(
-        self, application: Application, address: str, poll_interval: float
-    ) -> None:
-        self.has_stopped = Event()
-        self.application = application
-        self.address = address
-        self.poll_interval = poll_interval
+    def __init__(self, app_class: Type[Application], env: EnvType) -> None:
+        self.env = GrpcEnvironment(env=env)
+        self.application = app_class(env=env)
+        self.start_stop_lock = Lock()
+        self.address = self.env.get_grpc_address(self.application.name)
+        self.poll_interval = self.env.get_poll_interval(self.application.name)
         self.maximum_concurrent_rpcs = None
         self.compression = None
+        self.has_started = Event()
+        self.has_stopped = Event()
 
     def start(self) -> None:
         """
         Starts gRPC server.
         """
-        # print("Starting application server:", self.application.name)
-        self.executor = ThreadPoolExecutor()
-        self.server = grpc.server(
-            thread_pool=self.executor,
-            maximum_concurrent_rpcs=self.maximum_concurrent_rpcs,
-            compression=self.compression,
-        )
-        self.service = ApplicationService(
-            self.application, poll_interval=self.poll_interval
-        )
-        self.executor.submit(self.service.run)
-        self.executor.submit(self.service.self_prompt)
-        add_ApplicationServicer_to_server(self.service, self.server)
-        self.server.add_insecure_port(self.address)
-        self.server.start()
-        # print("Started application server:", self.application.name)
+        with self.start_stop_lock:
+            if self.has_started.is_set():
+                return
+            self.has_started.set()
+            self.has_stopped.clear()
+
+            # print("Starting application server:", self.application.name)
+            self.executor = ThreadPoolExecutor()
+            self.grpc_server = grpc.server(
+                thread_pool=self.executor,
+                maximum_concurrent_rpcs=self.maximum_concurrent_rpcs,
+                compression=self.compression,
+            )
+            self.service = ApplicationService(
+                self.application, poll_interval=self.poll_interval
+            )
+            add_ApplicationServicer_to_server(self.service, self.grpc_server)
+            self.grpc_server.add_insecure_port(self.address)
+            self.grpc_server.start()
+            self.executor.submit(self.lead_and_follow)
+            self.executor.submit(self.service.run)
+            self.executor.submit(self.service.self_prompt)
+
+    def lead_and_follow(self) -> None:
+        system = self.env.get_system()
+        for follower_name in system.leads[self.application.name]:
+            follower_address = self.env.get_grpc_address(follower_name)
+            self.service.lead(follower_address)
+        for leader_name in system.follows[self.application.name]:
+            leader_address = self.env.get_grpc_address(leader_name)
+            self.service.follow(leader_name, leader_address)
+
+    def wait_for_termination(self) -> None:
+        self.grpc_server.wait_for_termination()
 
     def stop(self, grace: int = 30) -> None:
-        self.has_stopped.set()
-        # print("Stopping application server:", self.application.name)
-        self.service.stop()
-        self.server.stop(grace=grace)
-        # print("Stopped application server:", self.application.name)
+        with self.start_stop_lock:
+            if not self.has_started.is_set():
+                return
+            self.has_started.clear()
+            self.has_stopped.set()
+            # print("Stopping application server:", self.application.name)
+            self.service.stop()
+            self.grpc_server.stop(grace=grace)
+            # print("Stopped application server:", self.application.name)
 
     def __del__(self) -> None:
-        if not self.has_stopped.is_set():
+        if hasattr(self, "has_stopped") and not self.has_stopped.is_set():
             self.stop()

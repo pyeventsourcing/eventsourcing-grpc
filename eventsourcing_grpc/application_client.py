@@ -118,7 +118,8 @@ class ApplicationClient(Generic[TApplication]):
     def handle_channel_state_change(
         self, channel_connectivity: ChannelConnectivity
     ) -> None:
-        print("Channel state change:", channel_connectivity)
+        pass
+        # print("Channel state change:", channel_connectivity)
 
     def __del__(self) -> None:
         self.close()
