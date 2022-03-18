@@ -1,6 +1,22 @@
 # Welcome to Eventsourcing gRPC
 
-Code for running an application as a gRPC process.
+This package supports running an application as a gRPC server. A gRPC client
+can be used to interact with the application server. Application command
+and query methods can be called remotely, and notifications selected remotely.
+
+A system of applications can be run as a set of gRPC servers. Leader and
+follower relations and are supported with gRPC clients.
+
+A runner class is provided for simple orchestration, which starts gRPC servers
+and sets up connections using gRPC clients.
+
+Docker can also be used to run a gRPC server. Clients can interact with the
+gRPC server running inside the container.
+
+Docker-compose and Kubernetes can be used to orchestrate a system of applications.
+
+A tier of Web servers can be used connect to the application servers, presenting
+a Web interface to the applications.
 
 ## Installation
 
