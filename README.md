@@ -45,3 +45,7 @@ Reformat the code.
 Add dependencies in `pyproject.toml` and then update installed packages.
 
     $ make update-packages
+
+If you edit the .proto files, regenerate the project's protos package.
+
+    $ make generate-grpc-protos

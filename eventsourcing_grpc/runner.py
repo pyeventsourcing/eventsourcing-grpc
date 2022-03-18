@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import os
-import sys
-import traceback
 from itertools import count
 from signal import SIGINT
 from subprocess import Popen, TimeoutExpired
 from threading import Event, Thread
-from typing import Dict, List, Optional, Type, cast
+from typing import Dict, List, Optional, Type, Union, cast
 
 from eventsourcing.application import Application, TApplication
 from eventsourcing.system import Runner, System
-from eventsourcing.utils import EnvType, get_topic, resolve_topic
+from eventsourcing.utils import EnvType, get_topic
 
-from eventsourcing_grpc.application_client import ApplicationClient
+from eventsourcing_grpc.application_client import ApplicationClient, ApplicationProxy
 from eventsourcing_grpc.application_server import ApplicationServer, GrpcEnvironment
 
 
@@ -97,10 +95,12 @@ class GrpcRunner(Runner):
         try:
             client = self.clients[cls.name]
         except KeyError:
+            # Construct application transcoder.
+            # Make sure we don't try to connect to actual database.
             env = dict(self.env or {})
             env["PERSISTENCE_MODULE"] = "eventsourcing.popo"
             transcoder = cls(env=env).construct_transcoder()
-            address = GrpcEnvironment(self._env).get_grpc_address(cls.name)
+            address = GrpcEnvironment(self._env).get_server_address(cls.name)
             client = ApplicationClient(
                 client_name="runner", address=address, transcoder=transcoder
             )
@@ -109,10 +109,7 @@ class GrpcRunner(Runner):
         return cast(ApplicationClient[TApplication], client)
 
     def get(self, cls: Type[TApplication]) -> TApplication:
-        return cast(ApplicationClient[TApplication], self.clients[cls.name]).app
-
-    def get_app(self, cls: Type[TApplication]) -> TApplication:
-        return cast(TApplication, self.apps[cls.name])
+        return self.get_client(cls).app
 
     def __del__(self) -> None:
         self.stop()
@@ -173,7 +170,7 @@ class SubprocessManager(Thread):
             env = dict(self.env)
             env["APPLICATION_TOPIC"] = get_topic(self.app_class)
             self.process = Popen(
-                [sys.executable, __file__],
+                ["eventsourcing_grpc_server"],
                 close_fds=True,
                 env=env,
             )
@@ -184,42 +181,3 @@ class SubprocessManager(Thread):
         if self.process.wait():
             self.has_errored.set()
         # print("Subprocess exited, status code", self.process.returncode)
-
-
-def start_application_server() -> None:
-    application_topic = os.environ["APPLICATION_TOPIC"]
-    # sys.stdout.write(f"Starting subprocess {application_topic}\n")
-    sys.stdout.flush()
-
-    system_topic = os.environ["SYSTEM_TOPIC"]
-    system = cast(System, resolve_topic(system_topic))
-    app_class = resolve_topic(application_topic)
-
-    # Make sure we have a leader class if leading.
-    if app_class.name in system.leads:
-        app_class = system.leader_cls(app_class.name)
-
-    # Make sure we have a follower class if following.
-    if app_class.name in system.follows:
-        app_class = system.follower_cls(app_class.name)
-
-    # Get the address and start the application server.
-    app_server = ApplicationServer(app_class=app_class, env=os.environ)
-    app_server.start()
-
-    # Wait for termination.
-    try:
-        app_server.wait_for_termination()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        app_server.stop()
-
-
-if __name__ == "__main__":
-    try:
-        start_application_server()
-    except BaseException:
-        print(traceback.format_exc())
-        # print("Exiting with status code 1 after error")
-        sys.exit(1)

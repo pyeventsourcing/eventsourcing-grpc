@@ -1,0 +1,104 @@
+version: '2'
+
+services:
+  orders:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: "eventsourcing-grpc-example:latest"
+    environment:
+      APPLICATION_TOPIC: "eventsourcing_grpc.example:Orders"
+      SYSTEM_TOPIC: "eventsourcing_grpc.example:system"
+      ORDERS_GRPC_SERVER_ADDRESS: "orders:50051"
+      RESERVATIONS_GRPC_SERVER_ADDRESS: "reservations:50052"
+      PAYMENTS_GRPC_SERVER_ADDRESS: "payments:50053"
+      POLL_INTERVAL: "10"
+    ports:
+      - "50051:50051"
+
+  reservations:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: "eventsourcing-grpc-example:latest"
+    environment:
+      APPLICATION_TOPIC: "eventsourcing_grpc.example:Reservations"
+      SYSTEM_TOPIC: "eventsourcing_grpc.example:system"
+      ORDERS_GRPC_SERVER_ADDRESS: "orders:50051"
+      RESERVATIONS_GRPC_SERVER_ADDRESS: "reservations:50052"
+      PAYMENTS_GRPC_SERVER_ADDRESS: "payments:50053"
+      POLL_INTERVAL: "10"
+    ports:
+      - "50052:50052"
+
+  payments:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: "eventsourcing-grpc-example:latest"
+    environment:
+      APPLICATION_TOPIC: "eventsourcing_grpc.example:Payments"
+      SYSTEM_TOPIC: "eventsourcing_grpc.example:system"
+      ORDERS_GRPC_SERVER_ADDRESS: "orders:50051"
+      RESERVATIONS_GRPC_SERVER_ADDRESS: "reservations:50052"
+      PAYMENTS_GRPC_SERVER_ADDRESS: "payments:50053"
+      POLL_INTERVAL: "10"
+    ports:
+      - "50053:50053"
+
+#  cassandra:
+#    image: "cassandra:latest"
+#    volumes:
+#      - cassandra_data:/var/lib/cassandra
+#    ports:
+#      - "9042:9042"
+#
+#  mysql:
+#    image: "mysql:latest"
+#    env_file:
+#      - .env
+#    volumes:
+#      - mysql_data:/var/lib/mysql
+#    ports:
+#      - "3306:3306"
+#
+#  postgres:
+#    image: "postgres:latest"
+#    env_file:
+#      - .env
+#    volumes:
+#      - postgres_data:/var/lib/postgresql/data
+#    ports:
+#      - "5432:5432"
+#
+#  redis:
+#    image: "redis:latest"
+#    volumes:
+#      - redis_data:/data
+#    ports:
+#      - "6379:6379"
+#
+#  axon:
+#    image: "axoniq/axonserver:latest"
+#    volumes:
+#      - axon_data:/data
+#      - axon_eventdata:/eventdata
+#    ports:
+#      - "8024:8024"
+#      - "8124:8124"
+#
+#  dynamodb:
+#    image: "amazon/dynamodb-local:latest"
+#    volumes:
+#      - dynamodb_data:/var/lib/dynamodb
+#    ports:
+#      - "8000:8000"
+#
+#volumes:
+#  cassandra_data:
+#  mysql_data:
+#  postgres_data:
+#  redis_data:
+#  axon_data:
+#  axon_eventdata:
+#  dynamodb_data:

@@ -12,27 +12,19 @@ from eventsourcing_grpc.application_client import (
     ChannelConnectTimeout,
 )
 from eventsourcing_grpc.application_server import ApplicationServer, GrpcEnvironment
-from tests.fixtures import Orders, Reservations
-
-system_orders = System([[Orders]])
-
-assert system_orders.topic
+from eventsourcing_grpc.example import Orders, Reservations
 
 env_orders: EnvType = {
-    "SYSTEM_TOPIC": system_orders.topic,
-    "ORDERS_GRPC_APPLICATION_ADDRESS": "localhost:50051",
-    "POLL_INTERVAL": "1",
+    "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
 }
 
 system_orders_and_reservations = System([[Orders, Reservations, Orders]])
 
-assert system_orders_and_reservations.topic
-
 env_orders_and_reservations: EnvType = {
     "SYSTEM_TOPIC": system_orders_and_reservations.topic,
-    "ORDERS_GRPC_APPLICATION_ADDRESS": "localhost:50051",
-    "RESERVATIONS_GRPC_APPLICATION_ADDRESS": "localhost:50052",
-    "PAYMENTS_GRPC_APPLICATION_ADDRESS": "localhost:50053",
+    "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
+    "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
+    "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
     "POLL_INTERVAL": "1",
 }
 
@@ -84,7 +76,7 @@ class TestApplicationServer(TestCase):
     def _create_client(
         self, app_class: Type[TApplication], env: EnvType
     ) -> ApplicationClient[TApplication]:
-        address = GrpcEnvironment(env=env).get_grpc_address(app_class.name)
+        address = GrpcEnvironment(env=env).get_server_address(app_class.name)
         transcoder = app_class().construct_transcoder()
         client: ApplicationClient[TApplication] = ApplicationClient(
             client_name="test",
@@ -118,52 +110,59 @@ class TestApplicationServer(TestCase):
         _ = self._start_server(Orders, env_orders)
         client = self._create_client(Orders, env_orders)
         client.connect(max_attempts=10)
+        app = client.app
 
         # Create an order.
-        order1_id = client.app.create_new_order()
+        order1_id = app.create_new_order()
 
         # Get the notifications.
-        notifications = client.get_notifications(start=1, limit=10, topics=[])
+        notifications = app.notification_log.select(start=1, limit=10)
         self.assertEqual(len(notifications), 1)
         self.assertEqual(notifications[0].id, 1)
         self.assertEqual(notifications[0].originator_id, order1_id)
         self.assertEqual(notifications[0].originator_version, 1)
-        self.assertEqual(notifications[0].topic, "tests.fixtures:Order.Created")
+        self.assertEqual(
+            notifications[0].topic, "eventsourcing_grpc.example:Order.Created"
+        )
 
         # Create another order.
-        order2_id = client.app.create_new_order()
+        order2_id = app.create_new_order()
 
         # Get the notifications.
-        notifications = client.get_notifications(start=1, limit=10, topics=[])
+        notifications = app.notification_log.select(start=1, limit=10)
         self.assertEqual(len(notifications), 2)
         self.assertEqual(notifications[1].id, 2)
         self.assertEqual(notifications[1].originator_id, order2_id)
         self.assertEqual(notifications[1].originator_version, 1)
-        self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Created")
+        self.assertEqual(
+            notifications[1].topic, "eventsourcing_grpc.example:Order.Created"
+        )
 
         # Get the notifications start=1, limit=1.
-        notifications = client.get_notifications(start=1, limit=1, topics=[])
+        notifications = app.notification_log.select(start=1, limit=1)
         self.assertEqual(len(notifications), 1)
         self.assertEqual(notifications[0].id, 1)
         self.assertEqual(notifications[0].originator_id, order1_id)
 
         # Get the notifications from notification ID = 2.
-        notifications = client.get_notifications(start=2, limit=10, topics=[])
+        notifications = app.notification_log.select(start=2, limit=10)
         self.assertEqual(len(notifications), 1)
         self.assertEqual(notifications[0].id, 2)
         self.assertEqual(notifications[0].originator_id, order2_id)
 
         # Get the notifications from notification ID = 3.
-        notifications = client.get_notifications(start=3, limit=10, topics=[])
+        notifications = app.notification_log.select(start=3, limit=10)
         self.assertEqual(len(notifications), 0)
 
         # Get the notifications from start=1, with wrong topic.
-        notifications = client.get_notifications(start=1, limit=10, topics=["wrong"])
+        notifications = app.notification_log.select(start=1, limit=10, topics=["wrong"])
         self.assertEqual(len(notifications), 0)
 
         # Get the notifications from start=1, with correct topic.
-        notifications = client.get_notifications(
-            start=1, limit=10, topics=["tests.fixtures:Order.Created"]
+        notifications = app.notification_log.select(
+            start=1,
+            limit=10,
+            topics=["eventsourcing_grpc.example:Order.Created"],
         )
         self.assertEqual(len(notifications), 2)
 
@@ -175,14 +174,14 @@ class TestApplicationServer(TestCase):
         )
         orders_client = self._create_client(Orders, env_orders_and_reservations)
         orders_client.connect(max_attempts=10)
+        app = orders_client.app
 
         # Create an order.
-        order1_id = orders_client.app.create_new_order()
+        order1_id = app.create_new_order()
 
         # Wait for the processing to happen.
         for __ in range(20):
-            order = orders_client.app.get_order(order1_id)
-            if order["is_reserved"]:
+            if app.is_order_reserved(order1_id):
                 break
             else:
                 sleep(0.1)
@@ -190,13 +189,17 @@ class TestApplicationServer(TestCase):
             self.fail("Timed out waiting for order to be reserved")
 
         # Get the notifications.
-        notifications = orders_client.get_notifications(start=1, limit=10, topics=[])
+        notifications = app.notification_log.select(start=1, limit=10)
         self.assertEqual(len(notifications), 2)
         self.assertEqual(notifications[0].id, 1)
         self.assertEqual(notifications[0].originator_id, order1_id)
         self.assertEqual(notifications[0].originator_version, 1)
-        self.assertEqual(notifications[0].topic, "tests.fixtures:Order.Created")
+        self.assertEqual(
+            notifications[0].topic, "eventsourcing_grpc.example:Order.Created"
+        )
         self.assertEqual(notifications[1].id, 2)
         self.assertEqual(notifications[1].originator_id, order1_id)
         self.assertEqual(notifications[1].originator_version, 2)
-        self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
+        self.assertEqual(
+            notifications[1].topic, "eventsourcing_grpc.example:Order.Reserved"
+        )

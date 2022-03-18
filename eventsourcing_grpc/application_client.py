@@ -1,10 +1,10 @@
 from functools import wraps
 from time import time
-from typing import Any, Generic, List, Optional, cast
+from typing import Any, Generic, List, Optional, Sequence, cast
 from uuid import UUID
 
 import grpc
-from eventsourcing.application import TApplication
+from eventsourcing.application import NotificationLog, Section, TApplication
 from eventsourcing.persistence import Notification, Transcoder
 from eventsourcing.utils import retry
 from grpc import (
@@ -144,10 +144,17 @@ class ApplicationClient(Generic[TApplication]):
 
     @errors
     def get_notifications(
-        self, start: int, limit: int, topics: List[str]
+        self,
+        start: int,
+        limit: int,
+        stop: Optional[int] = None,
+        topics: Sequence[str] = (),
     ) -> List[Notification]:
         request = NotificationsRequest(
-            start=str(start), limit=str(limit), topics=topics
+            start=str(start),
+            limit=str(limit),
+            stop="" if stop is None else str(stop),
+            topics=topics,
         )
         notifications_reply = self.stub.GetNotifications(
             request, timeout=self.request_deadline
@@ -214,5 +221,28 @@ class ApplicationProxy:
     def __init__(self, client: ApplicationClient[TApplication]) -> None:
         self.client = client
 
+    @property
+    def notification_log(self) -> NotificationLog:
+        return NotificationLogProxy(self)
+
     def __getattr__(self, item: str) -> ApplicationMethodProxy:
         return ApplicationMethodProxy(self.client, item)
+
+
+class NotificationLogProxy(NotificationLog):
+    def __init__(self, application_proxy: ApplicationProxy):
+        self.application_proxy = application_proxy
+
+    def __getitem__(self, section_id: str) -> Section:
+        raise NotImplementedError()
+
+    def select(
+        self,
+        start: int,
+        limit: int,
+        stop: Optional[int] = None,
+        topics: Sequence[str] = (),
+    ) -> List[Notification]:
+        return self.application_proxy.client.get_notifications(
+            start=start, limit=limit, stop=stop, topics=topics
+        )

@@ -4,13 +4,13 @@ from time import sleep
 from unittest import TestCase
 from uuid import UUID
 
+from eventsourcing_grpc.example import Orders, system
 from eventsourcing_grpc.runner import GrpcRunner
-from tests.fixtures import Orders, system
 
 system_env = {
-    "ORDERS_GRPC_APPLICATION_ADDRESS": "localhost:50051",
-    "RESERVATIONS_GRPC_APPLICATION_ADDRESS": "localhost:50052",
-    "PAYMENTS_GRPC_APPLICATION_ADDRESS": "localhost:50053",
+    "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
+    "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
+    "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
     "POLL_INTERVAL": "1",
 }
 
@@ -39,15 +39,14 @@ class TestRunner(TestCase):
             self.fail("Couldn't start runner")
 
         # Create an order.
-        orders = runner.get_client(Orders)
-        order1_id = orders.app.create_new_order()
+        orders = runner.get(Orders)
+        order1_id = orders.create_new_order()
         self.assertIsInstance(order1_id, UUID)
 
         # Wait for the processing to happen.
         for _ in range(100):
             sleep(0.1)
-            order = orders.app.get_order(order1_id)
-            if order["is_paid"]:
+            if orders.is_order_paid(order1_id):
                 break
             elif runner.has_errored.is_set():
                 self.fail("Runner error")
@@ -55,20 +54,26 @@ class TestRunner(TestCase):
             self.fail("Timeout waiting for order to be paid")
 
         # Get the notifications.
-        notifications = orders.get_notifications(start=1, limit=10, topics=[])
+        notifications = orders.notification_log.select(start=1, limit=10, topics=[])
         self.assertEqual(len(notifications), 3)
         self.assertEqual(notifications[0].id, 1)
         self.assertEqual(notifications[0].originator_id, order1_id)
         self.assertEqual(notifications[0].originator_version, 1)
-        self.assertEqual(notifications[0].topic, "tests.fixtures:Order.Created")
+        self.assertEqual(
+            notifications[0].topic, "eventsourcing_grpc.example:Order.Created"
+        )
         self.assertEqual(notifications[1].id, 2)
         self.assertEqual(notifications[1].originator_id, order1_id)
         self.assertEqual(notifications[1].originator_version, 2)
-        self.assertEqual(notifications[1].topic, "tests.fixtures:Order.Reserved")
+        self.assertEqual(
+            notifications[1].topic, "eventsourcing_grpc.example:Order.Reserved"
+        )
         self.assertEqual(notifications[2].id, 3)
         self.assertEqual(notifications[2].originator_id, order1_id)
         self.assertEqual(notifications[2].originator_version, 3)
-        self.assertEqual(notifications[2].topic, "tests.fixtures:Order.Paid")
+        self.assertEqual(
+            notifications[2].topic, "eventsourcing_grpc.example:Order.Paid"
+        )
 
         orders_app = Orders()
         first_event = orders_app.mapper.to_domain_event(notifications[0])
@@ -81,13 +86,13 @@ class TestRunner(TestCase):
     def _long_runner(self, with_subprocesses: bool = False) -> None:
         # Set up.
         env = {
-            "ORDERS_GRPC_APPLICATION_ADDRESS": "localhost:50051",
-            "RESERVATIONS_GRPC_APPLICATION_ADDRESS": "localhost:50052",
-            "PAYMENTS_GRPC_APPLICATION_ADDRESS": "localhost:50053",
+            "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
+            "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
+            "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
             "POLL_INTERVAL": "1",
         }
         if with_subprocesses:
-            env["SYSTEM_TOPIC"] = "tests.fixtures:system"
+            env["SYSTEM_TOPIC"] = "eventsourcing_grpc.example:system"
 
         runner = GrpcRunner(system=system, env=env)
         runner.start(with_subprocesses=with_subprocesses)
@@ -97,13 +102,13 @@ class TestRunner(TestCase):
         # sleep(1)
 
         # Create an order.
-        orders = runner.get_client(Orders)
+        orders = runner.get(Orders)
 
         order_ids = []
 
         def create_order() -> None:
             for _ in range(10000):
-                order_ids.append(orders.app.create_new_order())
+                order_ids.append(orders.create_new_order())
                 # self.assertIsInstance(order1_id, UUID)
 
         def check_order() -> None:
@@ -115,8 +120,7 @@ class TestRunner(TestCase):
                     except IndexError:
                         sleep(0.01)
                         continue
-                    order = orders.app.get_order(order_id)
-                    if order["is_paid"]:
+                    if orders.is_order_paid(order_id):
                         print("Done order", i)
                         break
                     elif runner.has_errored.is_set():
@@ -132,5 +136,3 @@ class TestRunner(TestCase):
         thread2.start()
 
         thread2.join()
-
-        return

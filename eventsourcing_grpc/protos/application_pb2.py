@@ -19,8 +19,9 @@ DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
     b'\n+eventsourcing_grpc/protos/application.proto\x12\x12\x65ventsourcing_grpc"\x07\n\x05\x45mpty"B\n\rMethodRequest\x12\x13\n\x0bmethod_name\x18\x01'
     b" \x01(\t\x12\x0c\n\x04\x61rgs\x18\x02 \x01(\x0c\x12\x0e\n\x06kwargs\x18\x03"
     b' \x01(\x0c"\x1b\n\x0bMethodReply\x12\x0c\n\x04\x64\x61ta\x18\x01'
-    b' \x01(\x0c"D\n\x14NotificationsRequest\x12\r\n\x05start\x18\x01'
-    b" \x01(\t\x12\r\n\x05limit\x18\x02 \x01(\t\x12\x0e\n\x06topics\x18\x03"
+    b' \x01(\x0c"R\n\x14NotificationsRequest\x12\r\n\x05start\x18\x01'
+    b" \x01(\t\x12\r\n\x05limit\x18\x02 \x01(\t\x12\x0c\n\x04stop\x18\x03"
+    b" \x01(\t\x12\x0e\n\x06topics\x18\x04"
     b' \x03(\t"k\n\x0cNotification\x12\n\n\x02id\x18\x01'
     b" \x01(\t\x12\x15\n\roriginator_id\x18\x02"
     b" \x01(\t\x12\x1a\n\x12originator_version\x18\x03 \x01(\t\x12\r\n\x05topic\x18\x04"
@@ -158,17 +159,17 @@ if _descriptor._USE_C_DESCRIPTORS == False:
     _METHODREPLY._serialized_start = 144
     _METHODREPLY._serialized_end = 171
     _NOTIFICATIONSREQUEST._serialized_start = 173
-    _NOTIFICATIONSREQUEST._serialized_end = 241
-    _NOTIFICATION._serialized_start = 243
-    _NOTIFICATION._serialized_end = 350
-    _NOTIFICATIONSREPLY._serialized_start = 352
-    _NOTIFICATIONSREPLY._serialized_end = 429
-    _FOLLOWREQUEST._serialized_start = 431
-    _FOLLOWREQUEST._serialized_end = 477
-    _LEADREQUEST._serialized_start = 479
-    _LEADREQUEST._serialized_end = 523
-    _PROMPTREQUEST._serialized_start = 525
-    _PROMPTREQUEST._serialized_end = 563
-    _APPLICATION._serialized_start = 566
-    _APPLICATION._serialized_end = 1060
+    _NOTIFICATIONSREQUEST._serialized_end = 255
+    _NOTIFICATION._serialized_start = 257
+    _NOTIFICATION._serialized_end = 364
+    _NOTIFICATIONSREPLY._serialized_start = 366
+    _NOTIFICATIONSREPLY._serialized_end = 443
+    _FOLLOWREQUEST._serialized_start = 445
+    _FOLLOWREQUEST._serialized_end = 491
+    _LEADREQUEST._serialized_start = 493
+    _LEADREQUEST._serialized_end = 537
+    _PROMPTREQUEST._serialized_start = 539
+    _PROMPTREQUEST._serialized_end = 577
+    _APPLICATION._serialized_start = 580
+    _APPLICATION._serialized_end = 1074
 # @@protoc_insertion_point(module_scope)

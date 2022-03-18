@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "eventsourcing_grpc"
-version = "0.1.dev0"
+version = "0.1"
 description = "Eventsourcing gRPC"
 authors = [
     "John Bywater <john.bywater@appropriatesoftware.net>",
@@ -24,8 +24,11 @@ include = ["eventsourcing-grpc/py.typed"]
 python = "^3.8"
 #eventsourcing = { version = "~9.2.3" }
 eventsourcing = { git = "https://github.com/pyeventsourcing/eventsourcing.git", branch = "9.2"}
-
 grpcio = "~1.44.0"
+protobuf = "~3.19.4"
+
+[tool.poetry.scripts]
+eventsourcing_grpc_server = 'eventsourcing_grpc.console:run_application_server'
 
 [tool.poetry.dev-dependencies]
 black = { version = "*", allow-prereleases = true }

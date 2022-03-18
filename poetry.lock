@@ -390,7 +390,7 @@ toml = "*"
 name = "protobuf"
 version = "3.19.4"
 description = "Protocol Buffers"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.5"
 
@@ -431,7 +431,7 @@ diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
 name = "pytest"
-version = "7.1.0"
+version = "7.1.1"
 description = "pytest: simple powerful testing with Python"
 category = "dev"
 optional = false
@@ -535,7 +535,7 @@ python-versions = ">=3.7"
 
 [[package]]
 name = "types-protobuf"
-version = "3.19.12"
+version = "3.19.13"
 description = "Typing stubs for protobuf"
 category = "dev"
 optional = false
@@ -570,7 +570,7 @@ testing = ["coverage (>=4)", "coverage-enable-subprocess (>=1)", "flaky (>=3)", 
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "e5c2a6de900a34509c3ee378a5acca3dfeec76386477106ef60e7403da13d2d9"
+content-hash = "851b70820459bf39f9888d629c38099ac1c77995fc575b96d5067d79e861e675"
 
 [metadata.files]
 atomicwrites = [
@@ -908,8 +908,8 @@ pyparsing = [
     {file = "pyparsing-3.0.7.tar.gz", hash = "sha256:18ee9022775d270c55187733956460083db60b37d0d0fb357445f3094eed3eea"},
 ]
 pytest = [
-    {file = "pytest-7.1.0-py3-none-any.whl", hash = "sha256:b555252a95bbb2a37a97b5ac2eb050c436f7989993565f5e0c9128fcaacadd0e"},
-    {file = "pytest-7.1.0.tar.gz", hash = "sha256:f1089d218cfcc63a212c42896f1b7fbf096874d045e1988186861a1a87d27b47"},
+    {file = "pytest-7.1.1-py3-none-any.whl", hash = "sha256:92f723789a8fdd7180b6b06483874feca4c48a5c76968e03bb3e7f806a1869ea"},
+    {file = "pytest-7.1.1.tar.gz", hash = "sha256:841132caef6b1ad17a9afde46dc4f6cfa59a05f9555aae5151f73bdf2820ca63"},
 ]
 pytest-cov = [
     {file = "pytest-cov-3.0.0.tar.gz", hash = "sha256:e7f0f5b1617d2210a2cabc266dfe2f4c75a8d32fb89eafb7ad9d06f6d076d470"},
@@ -998,8 +998,8 @@ tomli = [
     {file = "tomli-2.0.1.tar.gz", hash = "sha256:de526c12914f0c550d15924c62d72abc48d6fe7364aa87328337a31007fe8a4f"},
 ]
 types-protobuf = [
-    {file = "types-protobuf-3.19.12.tar.gz", hash = "sha256:b022247347471219acbe2fe68d2f3623d788252e99e9b97358b7ab904d268a78"},
-    {file = "types_protobuf-3.19.12-py3-none-any.whl", hash = "sha256:130bf00e688ae9376682ac8f3d6610be797d8a6072f102f530ca1d579b52e54b"},
+    {file = "types-protobuf-3.19.13.tar.gz", hash = "sha256:963b84f57ec130e4f479cf0ed2462c21c7ef894bece0bb01dcbb543a83e08bbb"},
+    {file = "types_protobuf-3.19.13-py3-none-any.whl", hash = "sha256:784b738bb82d2be8aa39cc1da936d65169b4dabed1c692adbe642191e1174d5e"},
 ]
 typing-extensions = [
     {file = "typing_extensions-4.1.1-py3-none-any.whl", hash = "sha256:21c85e0fe4b9a155d0799430b0ad741cdce7e359660ccbd8b530613e8df88ce2"},

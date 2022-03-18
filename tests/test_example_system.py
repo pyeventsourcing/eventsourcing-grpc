@@ -2,10 +2,10 @@ from unittest import TestCase
 
 from eventsourcing.system import SingleThreadedRunner
 
-from tests.fixtures import Orders, system
+from eventsourcing_grpc.example import Orders, system
 
 
-class TestFixtures(TestCase):
+class TestExampleSystem(TestCase):
     def test_run_system(self) -> None:
         runner = SingleThreadedRunner(system=system)
         runner.start()

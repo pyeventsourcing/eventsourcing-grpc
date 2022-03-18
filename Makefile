@@ -1,18 +1,14 @@
 .EXPORT_ALL_VARIABLES:
 
-COMPOSE_FILE ?= docker/docker-compose-local.yml
-COMPOSE_PROJECT_NAME ?= eventsourcing-grpc
-
-POETRY_VERSION = 1.1.11
+# POETRY_VERSION = 1.1.11
 POETRY ?= poetry
-
-DOTENV_BASE_FILE ?= .env-base
-DOTENV_LOCAL_FILE ?= .env
-
 POETRY_INSTALLER_URL ?= https://install.python-poetry.org
 
--include $(DOTENV_BASE_FILE)
--include $(DOTENV_LOCAL_FILE)
+# COMPOSE_FILE ?= docker/docker-compose.yaml
+# COMPOSE_PROJECT_NAME ?= eventsourcing-grpc
+COMPOSE_ENV_FILE ?= docker/.env
+
+-include $(COMPOSE_ENV_FILE)
 
 .PHONY: install-poetry
 install-poetry:
@@ -45,23 +41,6 @@ lock-packages:
 .PHONY: update-packages
 update-packages:
 	$(POETRY) update -vv
-
-.PHONY: docker-up
-docker-up:
-	docker-compose up -d
-	docker-compose ps
-
-.PHONY: docker-down
-docker-down:
-	docker-compose stop
-
-.PHONY: docker-logs
-docker-logs:
-	docker-compose logs --follow
-
-.PHONY: docker-ps
-docker-ps:
-	docker-compose ps
 
 .PHONY: lint-black
 lint-black:
@@ -102,6 +81,7 @@ test:
 
 .PHONY: build
 build:
+	rm -r ./dist/
 	$(POETRY) build
 # 	$(POETRY) build -f sdist    # build source distribution only
 
@@ -115,13 +95,34 @@ generate-grpc-protos:
 	  --proto_path=./protos \
 	  --python_out=. \
 	  --grpc_python_out=. \
-	   --mypy_out=. \
+	  --mypy_out=. \
 	  protos/eventsourcing_grpc/protos/application.proto
 
-# .PHONY: generate-grpc-protos
-# generate-grpc-protos:
-# 	python -m grpc_tools.protoc \
-# 	  --proto_path=./eventsourcing_grpc \
-# 	  --python_out=eventsourcing_grpc \
-# 	  --grpc_python_out=eventsourcing_grpc \
-# 	  eventsourcing_grpc/application.proto
+.PHONY: docker-pull
+docker-pull:
+	@docker-compose pull
+
+.PHONY: docker-build
+docker-build:
+	@docker-compose build
+
+.PHONY: docker-up
+docker-up:
+	@docker-compose up -d
+	@docker-compose ps
+
+.PHONY: docker-stop
+docker-stop:
+	@docker-compose stop
+
+.PHONY: docker-down
+docker-down:
+	@docker-compose down -v --remove-orphans
+
+.PHONY: docker-logs
+docker-logs:
+	@docker-compose logs --follow --tail="all"
+
+.PHONY: docker-ps
+docker-ps:
+	docker-compose ps

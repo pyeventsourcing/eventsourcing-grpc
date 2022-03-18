@@ -106,9 +106,10 @@ class ApplicationService(ApplicationServicer):
     ) -> NotificationsReply:
         start = int(request.start)
         limit = int(request.limit)
+        stop = int(request.stop) if request.stop else None
         topics = request.topics
         notifications = self.application.notification_log.select(
-            start=start, limit=limit, topics=topics
+            start=start, limit=limit, stop=stop, topics=topics
         )
         return NotificationsReply(
             notifications=[
@@ -172,6 +173,7 @@ class ApplicationService(ApplicationServicer):
     def run(self) -> None:
         while not self.is_stopping.is_set():
             self.is_prompted.wait()
+            # print(self.application.name, "prompted...")
 
             with self.prompted_names_lock:
                 prompted_names = self.prompted_names
@@ -201,12 +203,16 @@ class ApplicationService(ApplicationServicer):
                     sleep(1)
 
     def self_prompt(self) -> None:
-        if isinstance(self.application, Follower):
+        if self.poll_interval > 0 and isinstance(self.application, Follower):
             while not self.is_stopping.wait(timeout=self.poll_interval):
                 for leader_name in self.application.readers:
                     last_pull_time = self.last_pull_times.get(leader_name, 0)
                     if time() - last_pull_time > self.poll_interval:
-                        # print(f"{time()} {self.application.name} polling {leader_name}")
+                        print(
+                            self.application.name,
+                            "self-prompted to pull from",
+                            leader_name,
+                        )
                         self.prompt(leader_name)
 
     def stop(self) -> None:
@@ -220,11 +226,11 @@ class GrpcEnvironment:
     def __init__(self, env: EnvType):
         self.env = env
 
-    def get_grpc_address(self, name: str) -> str:
+    def get_server_address(self, name: str) -> str:
         env = Environment(name=name, env=self.env)
-        address = env.get("GRPC_APPLICATION_ADDRESS")
+        address = env.get("GRPC_SERVER_ADDRESS")
         if not address:
-            raise ValueError("GRPC address not found in environment")
+            raise ValueError(f"{name} gRPC server address not found in environment")
         else:
             return address
 
@@ -232,7 +238,7 @@ class GrpcEnvironment:
         env = Environment(name=name, env=self.env)
         poll_interval_str = env.get("POLL_INTERVAL")
         if not poll_interval_str:
-            raise ValueError("POLL_INTERVAL not found in environment")
+            return 0
         try:
             poll_interval = float(poll_interval_str)
         except ValueError:
@@ -242,9 +248,12 @@ class GrpcEnvironment:
         else:
             return poll_interval
 
-    def get_system(self) -> System:
-        system_topic = self.env["SYSTEM_TOPIC"]
-        return cast(System, resolve_topic(system_topic))
+    def get_system(self) -> Optional[System]:
+        system_topic = self.env.get("SYSTEM_TOPIC")
+        if system_topic:
+            return cast(System, resolve_topic(system_topic))
+        else:
+            return None
 
 
 class ApplicationServer:
@@ -252,7 +261,7 @@ class ApplicationServer:
         self.env = GrpcEnvironment(env=env)
         self.application = app_class(env=env)
         self.start_stop_lock = Lock()
-        self.address = self.env.get_grpc_address(self.application.name)
+        self.address = self.env.get_server_address(self.application.name)
         self.poll_interval = self.env.get_poll_interval(self.application.name)
         self.maximum_concurrent_rpcs = None
         self.compression = None
@@ -288,12 +297,13 @@ class ApplicationServer:
 
     def lead_and_follow(self) -> None:
         system = self.env.get_system()
-        for follower_name in system.leads[self.application.name]:
-            follower_address = self.env.get_grpc_address(follower_name)
-            self.service.lead(follower_address)
-        for leader_name in system.follows[self.application.name]:
-            leader_address = self.env.get_grpc_address(leader_name)
-            self.service.follow(leader_name, leader_address)
+        if system is not None:
+            for follower_name in system.leads[self.application.name]:
+                follower_address = self.env.get_server_address(follower_name)
+                self.service.lead(follower_address)
+            for leader_name in system.follows[self.application.name]:
+                leader_address = self.env.get_server_address(leader_name)
+                self.service.follow(leader_name, leader_address)
 
     def wait_for_termination(self) -> None:
         self.grpc_server.wait_for_termination()

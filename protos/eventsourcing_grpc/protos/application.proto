@@ -46,7 +46,8 @@ message MethodReply {
 message NotificationsRequest {
   string start = 1;
   string limit = 2;
-  repeated string topics = 3;
+  string stop = 3;
+  repeated string topics = 4;
 }
 
 message Notification {

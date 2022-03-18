@@ -62,9 +62,11 @@ class NotificationsRequest(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     START_FIELD_NUMBER: builtins.int
     LIMIT_FIELD_NUMBER: builtins.int
+    STOP_FIELD_NUMBER: builtins.int
     TOPICS_FIELD_NUMBER: builtins.int
     start: typing.Text
     limit: typing.Text
+    stop: typing.Text
     @property
     def topics(
         self,
@@ -76,12 +78,13 @@ class NotificationsRequest(google.protobuf.message.Message):
         *,
         start: typing.Text = ...,
         limit: typing.Text = ...,
+        stop: typing.Text = ...,
         topics: typing.Optional[typing.Iterable[typing.Text]] = ...,
     ) -> None: ...
     def ClearField(
         self,
         field_name: typing_extensions.Literal[
-            "limit", b"limit", "start", b"start", "topics", b"topics"
+            "limit", b"limit", "start", b"start", "stop", b"stop", "topics", b"topics"
         ],
     ) -> None: ...
 
