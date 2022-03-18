@@ -21,7 +21,7 @@ env_orders: EnvType = {
 system_orders_and_reservations = System([[Orders, Reservations, Orders]])
 
 env_orders_and_reservations: EnvType = {
-    "SYSTEM_TOPIC": system_orders_and_reservations.topic,
+    "SYSTEM_TOPIC": system_orders_and_reservations.topic or "",
     "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
     "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
     "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",

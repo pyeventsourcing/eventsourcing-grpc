@@ -5,13 +5,13 @@ from itertools import count
 from signal import SIGINT
 from subprocess import Popen, TimeoutExpired
 from threading import Event, Thread
-from typing import Dict, List, Optional, Type, Union, cast
+from typing import Dict, List, Optional, Type, cast
 
 from eventsourcing.application import Application, TApplication
 from eventsourcing.system import Runner, System
 from eventsourcing.utils import EnvType, get_topic
 
-from eventsourcing_grpc.application_client import ApplicationClient, ApplicationProxy
+from eventsourcing_grpc.application_client import ApplicationClient
 from eventsourcing_grpc.application_server import ApplicationServer, GrpcEnvironment
 
 
