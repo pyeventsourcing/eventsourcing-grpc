@@ -133,3 +133,4 @@ dmypy.json
 /.idea/
 
 *.sqlite3*
+/ssl/

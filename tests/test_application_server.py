@@ -1,3 +1,6 @@
+import os
+import socket
+from copy import copy
 from time import sleep
 from typing import Type
 from unittest import TestCase
@@ -77,17 +80,43 @@ class TestApplicationServer(TestCase):
         self, app_class: Type[TApplication], env: EnvType
     ) -> ApplicationClient[TApplication]:
         address = GrpcEnvironment(env=env).get_server_address(app_class.name)
-        transcoder = app_class().construct_transcoder()
+        app = app_class(env=env)
+        ssl_certificate_path = app.env.get('SSL_CERTIFICATE_PATH')
+        transcoder = app.construct_transcoder()
         client: ApplicationClient[TApplication] = ApplicationClient(
             client_name="test",
             address=address,
             transcoder=transcoder,
+            ssl_certificate_path=ssl_certificate_path,
         )
         return client
 
     def test_client_connect_success(self) -> None:
         _ = self._start_server(Orders, env_orders)
         client = self._create_client(Orders, env_orders)
+        client.connect(max_attempts=10)
+
+    def test_ssl_credentials(self) -> None:
+        ssl_private_key_path = os.path.join(
+            os.path.dirname(__file__), "..", "ssl", "server.key"
+        )
+        ssl_certificate_path = os.path.join(
+            os.path.dirname(__file__), "..", "ssl", "server.crt"
+        )
+        hostname = socket.gethostname()
+        self.assertNotEqual(hostname, "localhost")
+        env_client: EnvType = {
+            "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
+            "SSL_CERTIFICATE_PATH": ssl_certificate_path,
+        }
+        env_server: EnvType = {
+            "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
+            "SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
+            "SSL_CERTIFICATE_PATH": ssl_certificate_path,
+        }
+
+        _ = self._start_server(Orders, env_server)
+        client = self._create_client(Orders, env_client)
         client.connect(max_attempts=10)
 
     def test_call_application_method(self) -> None:

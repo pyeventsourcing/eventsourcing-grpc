@@ -46,6 +46,10 @@ dependencies such as Black, isort and pytest.
 
 Add tests in `./tests`. Add code in `./eventsourcing_grpc`.
 
+Generate SSL certificate and private key for testing.
+
+    $ make ssl-cert
+
 Run tests.
 
     $ make test
@@ -64,4 +68,4 @@ Add dependencies in `pyproject.toml` and then update installed packages.
 
 If you edit the .proto files, regenerate the project's protos package.
 
-    $ make generate-grpc-protos
+    $ make grpc-stubs

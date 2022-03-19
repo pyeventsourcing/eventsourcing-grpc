@@ -1,3 +1,4 @@
+import os.path
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from re import fullmatch
@@ -266,8 +267,16 @@ class ApplicationServer:
         if fullmatch("localhost:[0-9]+", self.address):
             self.server_credentials = local_server_credentials()
         else:
-            raise NotImplementedError(
-                f"Non-local channel credentials required for address '{self.address}'"
+            ssl_private_key_path = self.application.env.get('SSL_PRIVATE_KEY_PATH')
+            ssl_certificate_path = self.application.env.get('SSL_CERTIFICATE_PATH')
+            with open(ssl_private_key_path, 'rb') as f:
+                ssl_private_key = f.read()
+            with open(ssl_certificate_path, 'rb') as f:
+                ssl_certificate = f.read()
+
+            # create server credentials
+            self.server_credentials = grpc.ssl_server_credentials(
+                ((ssl_private_key, ssl_certificate), )
             )
 
         self.poll_interval = self.env.get_poll_interval(self.application.name)

@@ -14,9 +14,10 @@ from grpc import (
     FutureTimeoutError,
     StatusCode,
     channel_ready_future,
-    local_channel_credentials,
+    local_channel_credentials, ssl_channel_credentials,
 )
 from grpc._channel import _InactiveRpcError
+from grpc._cython.cygrpc import SSLChannelCredentials
 
 from eventsourcing_grpc.protos.application_pb2 import (
     Empty,
@@ -76,13 +77,19 @@ class ApplicationClient(Generic[TApplication]):
         address: str,
         transcoder: Transcoder,
         request_deadline: int = 5,
+        ssl_certificate_path: Optional[str] = None
     ) -> None:
         self.client_name = client_name
         self.address = address
         if fullmatch("localhost:[0-9]+", self.address):
             self.credentials = local_channel_credentials()
         else:
-            f"Non-local server credentials required for address '{self.address}'"
+            if ssl_certificate_path is None:
+                raise ValueError("SSL certificate path not given")
+            with open(ssl_certificate_path, 'rb') as f:
+                trusted_certs = f.read()
+            self.credentials = ssl_channel_credentials(trusted_certs)
+
         self.transcoder = transcoder
         self.channel: Optional[Channel] = None
         self.request_deadline = request_deadline

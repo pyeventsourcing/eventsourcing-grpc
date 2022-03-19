@@ -8,6 +8,8 @@ POETRY_INSTALLER_URL ?= https://install.python-poetry.org
 # COMPOSE_PROJECT_NAME ?= eventsourcing-grpc
 COMPOSE_ENV_FILE ?= docker/.env
 
+SSL_HOSTNAME ?= $(shell hostname)
+
 -include $(COMPOSE_ENV_FILE)
 
 .PHONY: install-poetry
@@ -89,8 +91,8 @@ build:
 publish:
 	$(POETRY) publish
 
-.PHONY: generate-grpc-protos
-generate-grpc-protos:
+.PHONY: grpc-stubs
+grpc-stubs:
 	python -m grpc_tools.protoc \
 	  --proto_path=./protos \
 	  --python_out=. \
@@ -126,3 +128,9 @@ docker-logs:
 .PHONY: docker-ps
 docker-ps:
 	docker-compose ps
+
+.PHONY: ssl-cert
+ssl-cert:
+	mkdir -p ssl
+	openssl req -newkey rsa:2048 -nodes -keyout ssl/server.key -x509 -days 365 \
+	-out ssl/server.crt -subj "/C=GB/ST=London/L=London/O=IT/CN=$(SSL_HOSTNAME)"
