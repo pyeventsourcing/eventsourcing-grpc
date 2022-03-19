@@ -54,7 +54,7 @@ class TestRunner(TestCase):
             self.fail("Timeout waiting for order to be paid")
 
         # Get the notifications.
-        notifications = orders.notification_log.select(start=1, limit=10, topics=[])
+        notifications = orders.notification_log.select(start=1, limit=10)
         self.assertEqual(len(notifications), 3)
         self.assertEqual(notifications[0].id, 1)
         self.assertEqual(notifications[0].originator_id, order1_id)

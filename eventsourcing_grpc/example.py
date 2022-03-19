@@ -1,6 +1,5 @@
-import logging
 from typing import Any, Dict, Optional, cast
-from uuid import NAMESPACE_OID, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from eventsourcing.application import ProcessingEvent
 from eventsourcing.domain import Aggregate, DomainEvent, event
@@ -41,12 +40,10 @@ class Reservation(Aggregate):
 
     @classmethod
     def create_id(cls, order_id: UUID) -> UUID:
-        return uuid5(NAMESPACE_OID, str(order_id))
+        return uuid5(NAMESPACE_URL, f"/reservations/{order_id}/")
 
 
 class Payment(Aggregate):
-    __slots__ = ["order_id"]
-
     class Created(Aggregate.Created["Payment"]):
         order_id: UUID
 
@@ -54,8 +51,9 @@ class Payment(Aggregate):
     def __init__(self, order_id: UUID):
         self.order_id = order_id
 
-
-logger = logging.getLogger()
+    @classmethod
+    def create_id(cls, order_id: UUID) -> UUID:
+        return uuid5(NAMESPACE_URL, f"/payments/{order_id}/")
 
 
 class OrderAsDict(Transcoding):
