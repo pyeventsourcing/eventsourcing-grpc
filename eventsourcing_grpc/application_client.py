@@ -1,4 +1,5 @@
 from functools import wraps
+from re import fullmatch
 from time import time
 from typing import Any, Generic, List, Optional, Sequence, cast
 from uuid import UUID
@@ -13,6 +14,7 @@ from grpc import (
     FutureTimeoutError,
     StatusCode,
     channel_ready_future,
+    local_channel_credentials,
 )
 from grpc._channel import _InactiveRpcError
 
@@ -77,6 +79,10 @@ class ApplicationClient(Generic[TApplication]):
     ) -> None:
         self.client_name = client_name
         self.address = address
+        if fullmatch("localhost:[0-9]+", self.address):
+            self.credentials = local_channel_credentials()
+        else:
+            f"Non-local server credentials required for address '{self.address}'"
         self.transcoder = transcoder
         self.channel: Optional[Channel] = None
         self.request_deadline = request_deadline
@@ -95,7 +101,9 @@ class ApplicationClient(Generic[TApplication]):
             start = time()
             self.close()
             # Todo: Support secure channels.
-            self.channel = grpc.insecure_channel(self.address)
+            self.channel = grpc.secure_channel(
+                self.address, credentials=self.credentials
+            )
             self.channel.subscribe(self.handle_channel_state_change)
             future = channel_ready_future(self.channel)
             connect_deadline = min(0.5 * attempts, self.request_deadline)

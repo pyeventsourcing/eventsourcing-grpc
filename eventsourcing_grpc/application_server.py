@@ -1,5 +1,6 @@
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from re import fullmatch
 from threading import Event, Lock
 from time import sleep, time
 from typing import Dict, List, Optional, Sequence, Type, cast
@@ -19,7 +20,7 @@ from eventsourcing.system import (
     System,
 )
 from eventsourcing.utils import Environment, EnvType, resolve_topic
-from grpc._server import _Context as Context
+from grpc import ServicerContext, local_server_credentials
 
 from eventsourcing_grpc.application_client import ApplicationClient, GrpcError
 from eventsourcing_grpc.protos.application_pb2 import (
@@ -86,11 +87,11 @@ class ApplicationService(ApplicationServicer):
         self.is_stopping = Event()
         self.has_started = Event()
 
-    def Ping(self, request: Empty, context: Context) -> Empty:
+    def Ping(self, request: Empty, context: ServicerContext) -> Empty:
         return Empty()
 
     def CallApplicationMethod(
-        self, request: MethodRequest, context: Context
+        self, request: MethodRequest, context: ServicerContext
     ) -> MethodReply:
         method_name = request.method_name
         args = self.transcoder.decode(request.args)
@@ -102,7 +103,7 @@ class ApplicationService(ApplicationServicer):
         return reply
 
     def GetNotifications(
-        self, request: NotificationsRequest, context: Context
+        self, request: NotificationsRequest, context: ServicerContext
     ) -> NotificationsReply:
         start = int(request.start)
         limit = int(request.limit)
@@ -124,7 +125,7 @@ class ApplicationService(ApplicationServicer):
             ]
         )
 
-    def Follow(self, request: FollowRequest, context: Context) -> Empty:
+    def Follow(self, request: FollowRequest, context: ServicerContext) -> Empty:
         self.follow(request.name, request.address)
         return Empty()
 
@@ -148,7 +149,7 @@ class ApplicationService(ApplicationServicer):
                 self.clients[address] = client
             return client
 
-    def Lead(self, request: LeadRequest, context: Context) -> Empty:
+    def Lead(self, request: LeadRequest, context: ServicerContext) -> Empty:
         address = request.address
         self.lead(address)
         return Empty()
@@ -159,7 +160,7 @@ class ApplicationService(ApplicationServicer):
         assert isinstance(self.application, Leader)
         self.application.lead(follower=follower)
 
-    def Prompt(self, request: PromptRequest, context: Context) -> Empty:
+    def Prompt(self, request: PromptRequest, context: ServicerContext) -> Empty:
         leader_name = request.upstream_name
         self.prompt(leader_name)
         return Empty()
@@ -262,6 +263,13 @@ class ApplicationServer:
         self.application = app_class(env=env)
         self.start_stop_lock = Lock()
         self.address = self.env.get_server_address(self.application.name)
+        if fullmatch("localhost:[0-9]+", self.address):
+            self.server_credentials = local_server_credentials()
+        else:
+            raise NotImplementedError(
+                f"Non-local channel credentials required for address '{self.address}'"
+            )
+
         self.poll_interval = self.env.get_poll_interval(self.application.name)
         self.maximum_concurrent_rpcs = None
         self.compression = None
@@ -289,7 +297,7 @@ class ApplicationServer:
                 self.application, poll_interval=self.poll_interval
             )
             add_ApplicationServicer_to_server(self.service, self.grpc_server)
-            self.grpc_server.add_insecure_port(self.address)
+            self.grpc_server.add_secure_port(self.address, self.server_credentials)
             self.grpc_server.start()
             self.executor.submit(self.lead_and_follow)
             self.executor.submit(self.service.run)
