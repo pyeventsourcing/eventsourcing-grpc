@@ -87,7 +87,7 @@ test-docker:
 
 .PHONY: build
 build:
-	rm -r ./dist/
+	rm -r ./dist/ || true
 	$(POETRY) build
 # 	$(POETRY) build -f sdist    # build source distribution only
 
