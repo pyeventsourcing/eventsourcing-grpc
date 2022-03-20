@@ -125,5 +125,9 @@ jobs:
 
       - name: Generate SSL/TLS certificates
         run: make gen-certs
+
+      - name: Configure hosts
+        run: echo "127.0.0.1 orders" > /etc/hosts
+
       - name: Run tests
         run: make build docker-build docker-up test-docker docker-down
