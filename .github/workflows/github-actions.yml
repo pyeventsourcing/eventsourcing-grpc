@@ -91,6 +91,8 @@ jobs:
 #        run: |
 #          PGPASSWORD=postgres psql -c 'CREATE DATABASE {{cookiecutter.project_slug}};' -U postgres -h localhost
 #          PGPASSWORD=postgres psql -c "CREATE USER eventsourcing WITH PASSWORD 'eventsourcing';" -U postgres -h localhost
+      - name: Generate SSL/TLS certificates
+        run: make gen-certs
       - name: Run tests
         run: make test
 #        env:

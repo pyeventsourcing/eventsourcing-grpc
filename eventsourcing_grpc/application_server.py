@@ -1,10 +1,9 @@
-import os.path
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from re import fullmatch
 from threading import Event, Lock
 from time import sleep, time
-from typing import Dict, List, Optional, Sequence, Type, cast
+from typing import Dict, List, Optional, Sequence, Type
 
 import grpc
 from eventsourcing.application import (
@@ -12,22 +11,25 @@ from eventsourcing.application import (
     NotificationLog,
     RecordingEvent,
     Section,
+    TApplication,
 )
 from eventsourcing.system import (
     EventProcessingError,
     Follower,
     Leader,
     RecordingEventReceiver,
-    System,
 )
-from eventsourcing.utils import Environment, EnvType, resolve_topic
+from eventsourcing.utils import EnvType
 from grpc import ServicerContext, local_server_credentials
 
-from eventsourcing_grpc.application_client import ApplicationClient, GrpcError
+from eventsourcing_grpc.application_client import (
+    ApplicationClient,
+    GrpcError,
+    create_client,
+)
+from eventsourcing_grpc.environment import GrpcEnvironment
 from eventsourcing_grpc.protos.application_pb2 import (
     Empty,
-    FollowRequest,
-    LeadRequest,
     MethodReply,
     MethodRequest,
     Notification,
@@ -79,8 +81,6 @@ class ApplicationService(ApplicationServicer):
         self.last_pull_times: Dict[str, float] = {}
         self.application = application
         self.poll_interval = poll_interval
-        self.clients_lock = Lock()
-        self.clients: Dict[str, ApplicationClient[Application]] = {}
         self.transcoder = application.construct_transcoder()
         self.is_prompted = Event()
         self.prompted_names: List[str] = []
@@ -125,41 +125,6 @@ class ApplicationService(ApplicationServicer):
                 for n in notifications
             ]
         )
-
-    def Follow(self, request: FollowRequest, context: ServicerContext) -> Empty:
-        self.follow(request.name, request.address)
-        return Empty()
-
-    def follow(self, leader_name: str, leader_address: str) -> None:
-        client = self.get_client(leader_address)
-        notification_log = GRPCRemoteNotificationLog(client=client)
-        assert isinstance(self.application, Follower)
-        self.application.follow(name=leader_name, log=notification_log)
-
-    def get_client(self, address: str) -> ApplicationClient[Application]:
-        with self.clients_lock:
-            try:
-                client = self.clients[address]
-            except KeyError:
-                client = ApplicationClient(
-                    client_name=self.application.name,
-                    address=address,
-                    transcoder=self.application.construct_transcoder(),
-                )
-                client.connect()
-                self.clients[address] = client
-            return client
-
-    def Lead(self, request: LeadRequest, context: ServicerContext) -> Empty:
-        address = request.address
-        self.lead(address)
-        return Empty()
-
-    def lead(self, address: str) -> None:
-        client = self.get_client(address)
-        follower = GRPCRecordingEventReceiver(client=client)
-        assert isinstance(self.application, Leader)
-        self.application.lead(follower=follower)
 
     def Prompt(self, request: PromptRequest, context: ServicerContext) -> Empty:
         leader_name = request.upstream_name
@@ -220,66 +185,44 @@ class ApplicationService(ApplicationServicer):
     def stop(self) -> None:
         self.is_stopping.set()
         self.is_prompted.set()
-        for client in self.clients.values():
-            client.close()
-
-
-class GrpcEnvironment:
-    def __init__(self, env: EnvType):
-        self.env = env
-
-    def get_server_address(self, name: str) -> str:
-        env = Environment(name=name, env=self.env)
-        address = env.get("GRPC_SERVER_ADDRESS")
-        if not address:
-            raise ValueError(f"{name} gRPC server address not found in environment")
-        else:
-            return address
-
-    def get_poll_interval(self, name: str) -> float:
-        env = Environment(name=name, env=self.env)
-        poll_interval_str = env.get("POLL_INTERVAL")
-        if not poll_interval_str:
-            return 0
-        try:
-            poll_interval = float(poll_interval_str)
-        except ValueError:
-            raise ValueError(
-                f"Could not covert POLL_INTERVAL string to float: {poll_interval_str}"
-            ) from None
-        else:
-            return poll_interval
-
-    def get_system(self) -> Optional[System]:
-        system_topic = self.env.get("SYSTEM_TOPIC")
-        if system_topic:
-            return cast(System, resolve_topic(system_topic))
-        else:
-            return None
 
 
 class ApplicationServer:
     def __init__(self, app_class: Type[Application], env: EnvType) -> None:
-        self.env = GrpcEnvironment(env=env)
+        self.grpc_env = GrpcEnvironment(env=env)
         self.application = app_class(env=env)
         self.start_stop_lock = Lock()
-        self.address = self.env.get_server_address(self.application.name)
+        self.address = self.grpc_env.get_server_address(self.application.name)
         if fullmatch("localhost:[0-9]+", self.address):
             self.server_credentials = local_server_credentials()
         else:
-            ssl_private_key_path = self.application.env.get('SSL_PRIVATE_KEY_PATH')
-            ssl_certificate_path = self.application.env.get('SSL_CERTIFICATE_PATH')
-            with open(ssl_private_key_path, 'rb') as f:
+            ssl_private_key_path = self.grpc_env.get_ssl_private_key_path()
+            ssl_certificate_path = self.grpc_env.get_ssl_certificate_path()
+            ssl_root_certificate_path = self.grpc_env.get_ssl_root_certificate_path()
+            if ssl_private_key_path is None:
+                raise ValueError("SSL server private key path not given")
+            if ssl_certificate_path is None:
+                raise ValueError("SSL server certificate path not given")
+            if ssl_root_certificate_path is None:
+                raise ValueError("SSL root certificate path not given")
+            with open(ssl_private_key_path, "rb") as f:
                 ssl_private_key = f.read()
-            with open(ssl_certificate_path, 'rb') as f:
+            with open(ssl_certificate_path, "rb") as f:
                 ssl_certificate = f.read()
+            with open(ssl_root_certificate_path, "rb") as f:
+                ssl_root_certificate = f.read()
 
             # create server credentials
+            private_key_certificate_chain_pairs = ((ssl_private_key, ssl_certificate),)
             self.server_credentials = grpc.ssl_server_credentials(
-                ((ssl_private_key, ssl_certificate), )
+                private_key_certificate_chain_pairs=private_key_certificate_chain_pairs,
+                root_certificates=ssl_root_certificate,
+                require_client_auth=True,
             )
 
-        self.poll_interval = self.env.get_poll_interval(self.application.name)
+        self.clients_lock = Lock()
+        self.clients: Dict[Type[Application], ApplicationClient[Application]] = {}
+        self.poll_interval = self.grpc_env.get_poll_interval(self.application.name)
         self.maximum_concurrent_rpcs = None
         self.compression = None
         self.has_started = Event()
@@ -313,14 +256,43 @@ class ApplicationServer:
             self.executor.submit(self.service.self_prompt)
 
     def lead_and_follow(self) -> None:
-        system = self.env.get_system()
+        system = self.grpc_env.get_system()
         if system is not None:
             for follower_name in system.leads[self.application.name]:
-                follower_address = self.env.get_server_address(follower_name)
-                self.service.lead(follower_address)
+                follower_cls = system.follower_cls(follower_name)
+                client = self.get_client(
+                    owner_name=self.application.name,
+                    app_class=follower_cls,
+                    env=self.grpc_env.env,
+                )
+                recording_event_receiver = GRPCRecordingEventReceiver(client=client)
+                assert isinstance(self.application, Leader)
+                self.application.lead(follower=recording_event_receiver)
+
             for leader_name in system.follows[self.application.name]:
-                leader_address = self.env.get_server_address(leader_name)
-                self.service.follow(leader_name, leader_address)
+                leader_cls = system.follower_cls(leader_name)
+                client = self.get_client(
+                    owner_name=self.application.name,
+                    app_class=leader_cls,
+                    env=self.grpc_env.env,
+                )
+                notification_log = GRPCRemoteNotificationLog(client=client)
+                assert isinstance(self.application, Follower)
+                self.application.follow(name=leader_name, log=notification_log)
+
+    def get_client(
+        self, owner_name: str, app_class: Type[TApplication], env: EnvType
+    ) -> ApplicationClient[Application]:
+        with self.clients_lock:
+            try:
+                client = self.clients[app_class]
+            except KeyError:
+                client = create_client(
+                    owner_name=owner_name, app_class=app_class, env=env
+                )
+                client.connect()
+                self.clients[app_class] = client
+            return client
 
     def wait_for_termination(self) -> None:
         self.grpc_server.wait_for_termination()
@@ -331,6 +303,8 @@ class ApplicationServer:
                 return
             self.has_started.clear()
             self.has_stopped.set()
+            for client in self.clients.values():
+                client.close()
             # print("Stopping application server:", self.application.name)
             self.service.stop()
             self.grpc_server.stop(grace=grace)

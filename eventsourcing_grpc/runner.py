@@ -12,7 +12,8 @@ from eventsourcing.system import Runner, System
 from eventsourcing.utils import EnvType, get_topic
 
 from eventsourcing_grpc.application_client import ApplicationClient
-from eventsourcing_grpc.application_server import ApplicationServer, GrpcEnvironment
+from eventsourcing_grpc.application_server import ApplicationServer
+from eventsourcing_grpc.environment import GrpcEnvironment
 
 
 class GrpcRunner(Runner):
@@ -102,7 +103,7 @@ class GrpcRunner(Runner):
             transcoder = cls(env=env).construct_transcoder()
             address = GrpcEnvironment(self._env).get_server_address(cls.name)
             client = ApplicationClient(
-                client_name="runner", address=address, transcoder=transcoder
+                owner_name="runner", address=address, transcoder=transcoder
             )
             client.connect()
             self.clients[cls.name] = client

@@ -1,20 +1,16 @@
 import os
 import socket
-from copy import copy
 from time import sleep
 from typing import Type
 from unittest import TestCase
 from uuid import UUID
 
-from eventsourcing.application import Application, TApplication
+from eventsourcing.application import Application
 from eventsourcing.system import System
 from eventsourcing.utils import EnvType
 
-from eventsourcing_grpc.application_client import (
-    ApplicationClient,
-    ChannelConnectTimeout,
-)
-from eventsourcing_grpc.application_server import ApplicationServer, GrpcEnvironment
+from eventsourcing_grpc.application_client import ChannelConnectTimeout, create_client
+from eventsourcing_grpc.application_server import ApplicationServer
 from eventsourcing_grpc.example import Orders, Reservations
 
 env_orders: EnvType = {
@@ -30,6 +26,8 @@ env_orders_and_reservations: EnvType = {
     "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
     "POLL_INTERVAL": "1",
 }
+
+hostname = socket.gethostname()
 
 
 class TestApplicationServer(TestCase):
@@ -72,56 +70,46 @@ class TestApplicationServer(TestCase):
     def test_client_connect_failure(self) -> None:
         env = env_orders
         app_class = Orders
-        client = self._create_client(app_class, env)
+        client = create_client("test", app_class, env)
         with self.assertRaises(ChannelConnectTimeout):
             client.connect(max_attempts=1)
 
-    def _create_client(
-        self, app_class: Type[TApplication], env: EnvType
-    ) -> ApplicationClient[TApplication]:
-        address = GrpcEnvironment(env=env).get_server_address(app_class.name)
-        app = app_class(env=env)
-        ssl_certificate_path = app.env.get('SSL_CERTIFICATE_PATH')
-        transcoder = app.construct_transcoder()
-        client: ApplicationClient[TApplication] = ApplicationClient(
-            client_name="test",
-            address=address,
-            transcoder=transcoder,
-            ssl_certificate_path=ssl_certificate_path,
-        )
-        return client
-
     def test_client_connect_success(self) -> None:
         _ = self._start_server(Orders, env_orders)
-        client = self._create_client(Orders, env_orders)
+        client = create_client("test", Orders, env_orders)
         client.connect(max_attempts=10)
 
     def test_ssl_credentials(self) -> None:
         ssl_private_key_path = os.path.join(
-            os.path.dirname(__file__), "..", "ssl", "server.key"
+            os.path.dirname(__file__), "..", "ssl", hostname, f"{hostname}.key"
         )
         ssl_certificate_path = os.path.join(
-            os.path.dirname(__file__), "..", "ssl", "server.crt"
+            os.path.dirname(__file__), "..", "ssl", hostname, f"{hostname}.crt"
         )
-        hostname = socket.gethostname()
+        ssl_root_certificate_path = os.path.join(
+            os.path.dirname(__file__), "..", "ssl", hostname, "root.crt"
+        )
         self.assertNotEqual(hostname, "localhost")
         env_client: EnvType = {
             "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
+            "SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
+            "SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
             "SSL_CERTIFICATE_PATH": ssl_certificate_path,
         }
         env_server: EnvType = {
             "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
             "SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
             "SSL_CERTIFICATE_PATH": ssl_certificate_path,
+            "SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
         }
 
         _ = self._start_server(Orders, env_server)
-        client = self._create_client(Orders, env_client)
+        client = create_client("test", Orders, env_client)
         client.connect(max_attempts=10)
 
     def test_call_application_method(self) -> None:
         _ = self._start_server(Orders, env_orders)
-        client = self._create_client(Orders, env_orders)
+        client = create_client("test", Orders, env_orders)
         client.connect(max_attempts=10)
 
         # Create order.
@@ -137,7 +125,7 @@ class TestApplicationServer(TestCase):
 
     def test_get_notifications(self) -> None:
         _ = self._start_server(Orders, env_orders)
-        client = self._create_client(Orders, env_orders)
+        client = create_client("test", Orders, env_orders)
         client.connect(max_attempts=10)
         app = client.app
 
@@ -201,7 +189,7 @@ class TestApplicationServer(TestCase):
             self._start_server(Orders, env_orders_and_reservations),
             self._start_server(Reservations, env_orders_and_reservations),
         )
-        orders_client = self._create_client(Orders, env_orders_and_reservations)
+        orders_client = create_client("test", Orders, env_orders_and_reservations)
         orders_client.connect(max_attempts=10)
         app = orders_client.app
 

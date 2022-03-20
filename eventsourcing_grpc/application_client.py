@@ -1,24 +1,25 @@
 from functools import wraps
 from re import fullmatch
 from time import time
-from typing import Any, Generic, List, Optional, Sequence, cast
+from typing import Any, Generic, List, Optional, Sequence, Type, cast
 from uuid import UUID
 
 import grpc
 from eventsourcing.application import NotificationLog, Section, TApplication
 from eventsourcing.persistence import Notification, Transcoder
-from eventsourcing.utils import retry
+from eventsourcing.utils import EnvType, retry
 from grpc import (
     Channel,
     ChannelConnectivity,
     FutureTimeoutError,
     StatusCode,
     channel_ready_future,
-    local_channel_credentials, ssl_channel_credentials,
+    local_channel_credentials,
+    ssl_channel_credentials,
 )
 from grpc._channel import _InactiveRpcError
-from grpc._cython.cygrpc import SSLChannelCredentials
 
+from eventsourcing_grpc.environment import GrpcEnvironment
 from eventsourcing_grpc.protos.application_pb2 import (
     Empty,
     FollowRequest,
@@ -73,22 +74,36 @@ def errors(f: Any) -> Any:
 class ApplicationClient(Generic[TApplication]):
     def __init__(
         self,
-        client_name: str,
+        owner_name: str,
         address: str,
         transcoder: Transcoder,
         request_deadline: int = 5,
-        ssl_certificate_path: Optional[str] = None
+        ssl_root_certificate_path: Optional[str] = None,
+        ssl_private_key_path: Optional[str] = None,
+        ssl_certificate_path: Optional[str] = None,
     ) -> None:
-        self.client_name = client_name
+        self.owner_name = owner_name
         self.address = address
         if fullmatch("localhost:[0-9]+", self.address):
             self.credentials = local_channel_credentials()
         else:
+            if ssl_root_certificate_path is None:
+                raise ValueError("SSL root certificate path not given")
+            if ssl_private_key_path is None:
+                raise ValueError("SSL client private key path not given")
             if ssl_certificate_path is None:
-                raise ValueError("SSL certificate path not given")
-            with open(ssl_certificate_path, 'rb') as f:
-                trusted_certs = f.read()
-            self.credentials = ssl_channel_credentials(trusted_certs)
+                raise ValueError("SSL client certificate path not given")
+            with open(ssl_root_certificate_path, "rb") as f:
+                ssl_root_certificate = f.read()
+            with open(ssl_private_key_path, "rb") as f:
+                ssl_private_key = f.read()
+            with open(ssl_certificate_path, "rb") as f:
+                ssl_certificate = f.read()
+            self.credentials = ssl_channel_credentials(
+                root_certificates=ssl_root_certificate,
+                private_key=ssl_private_key,
+                certificate_chain=ssl_certificate,
+            )
 
         self.transcoder = transcoder
         self.channel: Optional[Channel] = None
@@ -118,7 +133,7 @@ class ApplicationClient(Generic[TApplication]):
                 future.result(timeout=connect_deadline)
             except FutureTimeoutError:
                 print(
-                    f"Client {self.client_name} timed out connecting to",
+                    f"Client {self.owner_name} timed out connecting to",
                     f"address {self.address}",
                     f"after {(time() - start):.2f}s",
                     f"(attempt {attempts})",
@@ -261,3 +276,19 @@ class NotificationLogProxy(NotificationLog):
         return self.application_proxy.client.get_notifications(
             start=start, limit=limit, stop=stop, topics=topics
         )
+
+
+def create_client(
+    owner_name: str, app_class: Type[TApplication], env: EnvType
+) -> ApplicationClient[TApplication]:
+    grpc_env = GrpcEnvironment(env=env)
+    application = app_class(env=env)
+    client: ApplicationClient[TApplication] = ApplicationClient(
+        owner_name=owner_name,
+        address=grpc_env.get_server_address(app_class.name),
+        transcoder=application.construct_transcoder(),
+        ssl_root_certificate_path=grpc_env.get_ssl_root_certificate_path(),
+        ssl_private_key_path=grpc_env.get_ssl_private_key_path(),
+        ssl_certificate_path=grpc_env.get_ssl_certificate_path(),
+    )
+    return client

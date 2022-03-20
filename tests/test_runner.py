@@ -7,6 +7,8 @@ from uuid import UUID
 from eventsourcing_grpc.example import Orders, system
 from eventsourcing_grpc.runner import GrpcRunner
 
+# NB, uses "localhost" so client and server don't authenticate with certificates.
+
 system_env = {
     "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
     "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",

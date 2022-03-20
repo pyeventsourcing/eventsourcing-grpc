@@ -46,9 +46,9 @@ dependencies such as Black, isort and pytest.
 
 Add tests in `./tests`. Add code in `./eventsourcing_grpc`.
 
-Generate SSL certificate and private key for testing.
+Generate SSL certificates and private keys for testing.
 
-    $ make ssl-cert
+    $ make gen-certs
 
 Run tests.
 

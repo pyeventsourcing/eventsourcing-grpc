@@ -8,7 +8,7 @@ POETRY_INSTALLER_URL ?= https://install.python-poetry.org
 # COMPOSE_PROJECT_NAME ?= eventsourcing-grpc
 COMPOSE_ENV_FILE ?= docker/.env
 
-SSL_HOSTNAME ?= $(shell hostname)
+HOSTNAME ?= $(shell hostname)
 
 -include $(COMPOSE_ENV_FILE)
 
@@ -129,8 +129,41 @@ docker-logs:
 docker-ps:
 	docker-compose ps
 
-.PHONY: ssl-cert
-ssl-cert:
-	mkdir -p ssl
-	openssl req -newkey rsa:2048 -nodes -keyout ssl/server.key -x509 -days 365 \
-	-out ssl/server.crt -subj "/C=GB/ST=London/L=London/O=IT/CN=$(SSL_HOSTNAME)"
+.PHONY: gen-root-cert
+gen-root-cert:
+	mkdir -p ssl/root
+    # Create root key.
+# 	openssl genrsa -des3 -out ssl/root.key 4096
+	openssl genrsa -out ssl/root/root.key 4096   # not password protected
+    # Create and self-sign root certificate.
+	openssl req -x509 -new -nodes -key ssl/root/root.key \
+        -sha256 -days 1024 -out ssl/root/root.crt \
+        -subj "/C=GB/ST=London/L=London/O=IT/CN=root.local"
+
+.PHONY: gen-server-cert
+gen-server-cert:
+	mkdir -p ssl/$(HOSTNAME)
+    # Create server key.
+	openssl genrsa -out ssl/$(HOSTNAME)/$(HOSTNAME).key 2048
+    # Create certificate signing request.
+	openssl req -new -sha256 -key ssl/$(HOSTNAME)/$(HOSTNAME).key \
+        -subj "/C=GB/ST=London/L=London/O=IT/CN=$(HOSTNAME)" \
+        -out ssl/$(HOSTNAME)/$(HOSTNAME).csr
+    # Verify CSR.
+	openssl req -in ssl/$(HOSTNAME)/$(HOSTNAME).csr -noout -text
+    # Create certificate.
+	openssl x509 -req -in ssl/$(HOSTNAME)/$(HOSTNAME).csr \
+        -CA ssl/root/root.crt -CAkey ssl/root/root.key \
+        -CAcreateserial -out ssl/$(HOSTNAME)/$(HOSTNAME).crt -days 500 -sha256
+    # Verify certificate.
+	openssl x509 -in ssl/$(HOSTNAME)/$(HOSTNAME).crt -text -noout
+    # Copy root cert.
+	cp ssl/root/root.crt ssl/$(HOSTNAME)/root.crt
+
+.PHONY: gen-certs
+gen-certs:
+	make gen-root-cert
+	make gen-server-cert
+	HOSTNAME=orders make gen-server-cert
+	HOSTNAME=reservations make gen-server-cert
+	HOSTNAME=payments make gen-server-cert
