@@ -4,13 +4,15 @@
 POETRY ?= poetry
 POETRY_INSTALLER_URL ?= https://install.python-poetry.org
 
-# COMPOSE_FILE ?= docker/docker-compose.yaml
-# COMPOSE_PROJECT_NAME ?= eventsourcing-grpc
 COMPOSE_ENV_FILE ?= docker/.env
 
 HOSTNAME ?= $(shell hostname)
 
 -include $(COMPOSE_ENV_FILE)
+
+COMPOSE_FILE ?= docker/docker-compose.yaml
+COMPOSE_PROJECT_NAME ?= eventsourcing-grpc
+
 
 .PHONY: install-poetry
 install-poetry:
