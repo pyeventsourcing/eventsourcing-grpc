@@ -101,3 +101,29 @@ jobs:
 #          POSTGRES_DB: postgres
 #          POSTGRES_HOST: 127.0.0.1
 #          POSTGRES_PORT: 5432
+
+  docker:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10"]
+        os: [ubuntu-20.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up cache
+        uses: actions/cache@v2
+        with:
+          path: /home/runner/.local
+          key: os-${{ matrix.os }}-python-${{ matrix.python-version}}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install root package
+        run: make install-packages  # just need 'eventsourcing_grpc' to be importable
+
+      - name: Generate SSL/TLS certificates
+        run: make gen-certs
+      - name: Run tests
+        run: make build docker-build docker-up test-docker docker-down

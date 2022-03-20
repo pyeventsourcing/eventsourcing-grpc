@@ -81,6 +81,10 @@ fmt: fmt-black fmt-isort
 test:
 	$(POETRY) run python -m pytest $(opts) $(call tests,.)
 
+.PHONY: test-docker
+test-docker:
+	$(POETRY) run python -m unittest discover docker -k test_order
+
 .PHONY: build
 build:
 	rm -r ./dist/

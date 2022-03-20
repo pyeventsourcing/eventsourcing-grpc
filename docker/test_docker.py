@@ -40,7 +40,7 @@ class TestDocker(TestCase):
 
         # Create an order.
         order1_id = client.app.create_new_order()
-        # print("Created order...")
+        print("Order created")
         self.assertIsInstance(order1_id, UUID)
 
         # Wait for the processing to happen.
@@ -48,6 +48,7 @@ class TestDocker(TestCase):
             client.app.get_order(order1_id)
             sleep(0.1)
             if client.app.is_order_paid(order1_id):
+                print("Order reserved and paid")
                 break
         else:
             self.fail("Timeout waiting for order to be paid")
