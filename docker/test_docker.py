@@ -16,7 +16,7 @@ hostname = socket.gethostname()
 
 # NB depends on '127.0.0.1 orders' in '/etc/hosts' or equivalent.
 system_env = {
-    "ORDERS_GRPC_SERVER_ADDRESS": f"orders:50051",  # hostname must match cert CN
+    "ORDERS_GRPC_SERVER_ADDRESS": "orders:50051",  # hostname must match cert CN
     "SSL_ROOT_CERTIFICATE_PATH": (
         os.path.join(os.path.dirname(__file__), "..", "ssl", "orders", "root.crt")
     ),
