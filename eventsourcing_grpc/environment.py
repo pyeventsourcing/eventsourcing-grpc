@@ -38,10 +38,10 @@ class GrpcEnvironment:
             return None
 
     def get_ssl_root_certificate_path(self) -> Optional[str]:
-        return self.env.get("SSL_ROOT_CERTIFICATE_PATH")
+        return self.env.get("GRPC_SSL_ROOT_CERTIFICATE_PATH")
 
     def get_ssl_certificate_path(self) -> Optional[str]:
-        return self.env.get("SSL_CERTIFICATE_PATH")
+        return self.env.get("GRPC_SSL_CERTIFICATE_PATH")
 
     def get_ssl_private_key_path(self) -> Optional[str]:
-        return self.env.get("SSL_PRIVATE_KEY_PATH")
+        return self.env.get("GRPC_SSL_PRIVATE_KEY_PATH")

@@ -139,12 +139,16 @@ docker-ps:
 gen-root-cert:
 	mkdir -p ssl/root
     # Create root key.
-# 	openssl genrsa -des3 -out ssl/root.key 4096
+# 	openssl genrsa -des3 -out ssl/root/root.key 4096
 	openssl genrsa -out ssl/root/root.key 4096   # not password protected
     # Create and self-sign root certificate.
 	openssl req -x509 -new -nodes -key ssl/root/root.key \
         -sha256 -days 1024 -out ssl/root/root.crt \
         -subj "/C=GB/ST=London/L=London/O=IT/CN=root.local"
+
+.PHONY: rm-root-key
+rm-root-key:
+	rm -p ssl/root/root.key
 
 .PHONY: gen-server-cert
 gen-server-cert:

@@ -92,15 +92,15 @@ class TestApplicationServer(TestCase):
         self.assertNotEqual(hostname, "localhost")
         env_client: EnvType = {
             "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
-            "SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
-            "SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
-            "SSL_CERTIFICATE_PATH": ssl_certificate_path,
+            "GRPC_SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
+            "GRPC_SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
+            "GRPC_SSL_CERTIFICATE_PATH": ssl_certificate_path,
         }
         env_server: EnvType = {
             "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
-            "SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
-            "SSL_CERTIFICATE_PATH": ssl_certificate_path,
-            "SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
+            "GRPC_SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
+            "GRPC_SSL_CERTIFICATE_PATH": ssl_certificate_path,
+            "GRPC_SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
         }
 
         _ = self._start_server(Orders, env_server)

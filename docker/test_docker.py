@@ -14,22 +14,14 @@ from eventsourcing_grpc.example import Orders
 
 hostname = socket.gethostname()
 
-# NB depends on '127.0.0.1 orders' in '/etc/hosts' or equivalent.
+ssl_path = os.path.join(os.path.dirname(__file__), "..", "ssl")
+
 system_env = {
-    "ORDERS_GRPC_SERVER_ADDRESS": "orders:50051",  # hostname must match cert CN
-    "SSL_ROOT_CERTIFICATE_PATH": (
-        os.path.join(os.path.dirname(__file__), "..", "ssl", "orders", "root.crt")
-    ),
-    "SSL_PRIVATE_KEY_PATH": (
-        os.path.join(
-            os.path.dirname(__file__), "..", "ssl", hostname, f"{hostname}.key"
-        )
-    ),
-    "SSL_CERTIFICATE_PATH": (
-        os.path.join(
-            os.path.dirname(__file__), "..", "ssl", hostname, f"{hostname}.crt"
-        )
-    ),
+    # Hostname must match cert CN, depends on '127.0.0.1 orders' in '/etc/hosts'
+    "ORDERS_GRPC_SERVER_ADDRESS": "orders:50051",  #
+    "GRPC_SSL_ROOT_CERTIFICATE_PATH": os.path.join(ssl_path, "root", "root.crt"),
+    "GRPC_SSL_PRIVATE_KEY_PATH": os.path.join(ssl_path, hostname, f"{hostname}.key"),
+    "GRPC_SSL_CERTIFICATE_PATH": os.path.join(ssl_path, hostname, f"{hostname}.crt"),
 }
 
 

@@ -13,9 +13,9 @@ services:
       RESERVATIONS_GRPC_SERVER_ADDRESS: "reservations:50052"
       PAYMENTS_GRPC_SERVER_ADDRESS: "payments:50053"
       POLL_INTERVAL: "10"
-      SSL_PRIVATE_KEY_PATH: /app/ssl/orders.key
-      SSL_CERTIFICATE_PATH: /app/ssl/orders.crt
-      SSL_ROOT_CERTIFICATE_PATH: /app/ssl/root.crt
+      GRPC_SSL_PRIVATE_KEY_PATH: /app/ssl/orders.key
+      GRPC_SSL_CERTIFICATE_PATH: /app/ssl/orders.crt
+      GRPC_SSL_ROOT_CERTIFICATE_PATH: /app/ssl/root.crt
     volumes:
       - ../ssl/orders:/app/ssl
     ports:
@@ -33,9 +33,9 @@ services:
       RESERVATIONS_GRPC_SERVER_ADDRESS: "reservations:50052"
       PAYMENTS_GRPC_SERVER_ADDRESS: "payments:50053"
       POLL_INTERVAL: "10"
-      SSL_PRIVATE_KEY_PATH: /app/ssl/reservations.key
-      SSL_CERTIFICATE_PATH: /app/ssl/reservations.crt
-      SSL_ROOT_CERTIFICATE_PATH: /app/ssl/root.crt
+      GRPC_SSL_PRIVATE_KEY_PATH: /app/ssl/reservations.key
+      GRPC_SSL_CERTIFICATE_PATH: /app/ssl/reservations.crt
+      GRPC_SSL_ROOT_CERTIFICATE_PATH: /app/ssl/root.crt
     volumes:
       - ../ssl/reservations:/app/ssl
     ports:
@@ -53,9 +53,9 @@ services:
       RESERVATIONS_GRPC_SERVER_ADDRESS: "reservations:50052"
       PAYMENTS_GRPC_SERVER_ADDRESS: "payments:50053"
       POLL_INTERVAL: "10"
-      SSL_PRIVATE_KEY_PATH: /app/ssl/payments.key
-      SSL_CERTIFICATE_PATH: /app/ssl/payments.crt
-      SSL_ROOT_CERTIFICATE_PATH: /app/ssl/root.crt
+      GRPC_SSL_PRIVATE_KEY_PATH: /app/ssl/payments.key
+      GRPC_SSL_CERTIFICATE_PATH: /app/ssl/payments.crt
+      GRPC_SSL_ROOT_CERTIFICATE_PATH: /app/ssl/root.crt
     volumes:
       - ../ssl/payments:/app/ssl
     ports:
