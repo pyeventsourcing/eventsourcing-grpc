@@ -13,7 +13,7 @@ system_env = {
     "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
     "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
     "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
-    "POLL_INTERVAL": "1",
+    "MAX_PULL_INTERVAL": "1",
 }
 
 
@@ -91,7 +91,7 @@ class TestRunner(TestCase):
             "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
             "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
             "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
-            "POLL_INTERVAL": "1",
+            "MAX_PULL_INTERVAL": "1",
         }
         if with_subprocesses:
             env["SYSTEM_TOPIC"] = "eventsourcing_grpc.example:system"

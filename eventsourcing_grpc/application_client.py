@@ -108,6 +108,7 @@ class ApplicationClient(Generic[TApplication]):
         self.transcoder = transcoder
         self.channel: Optional[Channel] = None
         self.request_deadline = request_deadline
+        self.is_closed = False
 
     @property
     def app(self) -> TApplication:
@@ -158,6 +159,7 @@ class ApplicationClient(Generic[TApplication]):
         """
         Closes the client's GPRC channel.
         """
+        self.is_closed = True
         if hasattr(self, "channel") and self.channel is not None:
             self.channel.close()
             self.channel = None

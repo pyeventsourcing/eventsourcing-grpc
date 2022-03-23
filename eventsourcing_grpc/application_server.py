@@ -1,8 +1,8 @@
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from re import fullmatch
-from threading import Event, Lock
-from time import sleep, time
+from threading import Event, Lock, RLock, Timer
+from time import monotonic, sleep
 from typing import Dict, List, Optional, Sequence, Type
 
 import grpc
@@ -44,8 +44,8 @@ from eventsourcing_grpc.protos.application_pb2_grpc import (
 
 
 class GRPCRemoteNotificationLog(NotificationLog):
-    def __init__(self, client: ApplicationClient[Application]):
-        self.client = client
+    def __init__(self, leader_client: ApplicationClient[Application]):
+        self.leader_client = leader_client
 
     def __getitem__(self, section_id: str) -> Section:
         raise NotImplementedError()
@@ -59,28 +59,72 @@ class GRPCRemoteNotificationLog(NotificationLog):
     ) -> List[Notification]:
         if stop is not None:
             raise NotImplementedError()
-        return self.client.get_notifications(
+        return self.leader_client.get_notifications(
             start=start, limit=limit, topics=list(topics)
         )
 
 
 class GRPCRecordingEventReceiver(RecordingEventReceiver):
-    def __init__(self, client: ApplicationClient[Application]):
-        self.client = client
+    def __init__(
+        self,
+        leader_name: str,
+        follower_client: ApplicationClient[Application],
+        min_interval: float = 0.1,
+    ):
+        self.leader_name = leader_name
+        self.follower_client = follower_client
+        self.last_prompt = monotonic()
+        self.timer_lock = RLock()
+        self.timer: Optional[Timer] = None
+        self.min_interval = min_interval
 
     def receive_recording_event(self, recording_event: RecordingEvent) -> None:
-        try:
-            self.client.prompt(name=recording_event.application_name)
-        except GrpcError:
-            # Todo: Log failure to prompt downstream application.
-            pass
+        with self.timer_lock:
+            time_since_last_prompt = monotonic() - self.last_prompt
+            if time_since_last_prompt < self.min_interval:
+                wait_to_prompt = self.min_interval - time_since_last_prompt
+                # print("Wait to prompt:", wait_to_prompt)
+                if self.timer is None:
+                    self.start_timer(wait_to_prompt)
+            else:
+                if self.timer is None:
+                    self.prompt_follower()
+
+    def start_timer(self, wait_to_prompt: float) -> None:
+        timer = Timer(interval=wait_to_prompt, function=self.prompt_follower)
+        timer.daemon = False
+        timer.start()
+        self.timer = timer
+
+    def prompt_follower(self) -> None:
+        with self.timer_lock:
+            try:
+                self.follower_client.prompt(name=self.leader_name)
+            except GrpcError:
+                # Todo: Log failure to prompt downstream application.
+                pass
+            except (ValueError, AttributeError):
+                # Probably already closed connection.
+                pass
+            finally:
+                self.last_prompt = monotonic()
+                self.stop_timer()
+
+    def stop_timer(self) -> None:
+        if self.timer:
+            self.timer.cancel()
+            self.timer = None
+
+    def __del__(self) -> None:
+        with self.timer_lock:
+            self.stop_timer()
 
 
 class ApplicationService(ApplicationServicer):
-    def __init__(self, application: Application, poll_interval: float) -> None:
-        self.last_pull_times: Dict[str, float] = {}
+    def __init__(self, application: Application, max_pull_interval: float) -> None:
+        self.last_prompt_times: Dict[str, float] = {}
         self.application = application
-        self.poll_interval = poll_interval
+        self.max_pull_interval = max_pull_interval
         self.transcoder = application.construct_transcoder()
         self.is_prompted = Event()
         self.prompted_names: List[str] = []
@@ -136,8 +180,9 @@ class ApplicationService(ApplicationServicer):
             if leader_name not in self.prompted_names:
                 self.prompted_names.append(leader_name)
                 self.is_prompted.set()
+                self.last_prompt_times[leader_name] = monotonic()
 
-    def run(self) -> None:
+    def pull_and_process_loop(self) -> None:
         while not self.is_stopping.is_set():
             self.is_prompted.wait()
             # print(self.application.name, "prompted...")
@@ -156,7 +201,6 @@ class ApplicationService(ApplicationServicer):
                         sleep(1)
                     else:
                         self.application.pull_and_process(name)
-                        self.last_pull_times[name] = time()
                 except Exception as e:
                     error = EventProcessingError(str(e))
                     error.__cause__ = e
@@ -169,18 +213,18 @@ class ApplicationService(ApplicationServicer):
                     # print("Sleeping after error....")
                     sleep(1)
 
-    def self_prompt(self) -> None:
-        if self.poll_interval > 0 and isinstance(self.application, Follower):
-            while not self.is_stopping.wait(timeout=self.poll_interval):
+    def self_prompt_loop(self) -> None:
+        if self.max_pull_interval > 0 and isinstance(self.application, Follower):
+            wait_timeout = self.max_pull_interval
+            while not self.is_stopping.wait(timeout=wait_timeout):
+                wait_timeout = self.max_pull_interval
                 for leader_name in self.application.readers:
-                    last_pull_time = self.last_pull_times.get(leader_name, 0)
-                    if time() - last_pull_time > self.poll_interval:
-                        print(
-                            self.application.name,
-                            "self-prompted to pull from",
-                            leader_name,
-                        )
+                    last_time = self.last_prompt_times.get(leader_name, 0)
+                    time_remaining = last_time + self.max_pull_interval - monotonic()
+                    if time_remaining < 0.1:  # wait(timeout) sometimes returns early
                         self.prompt(leader_name)
+                    else:
+                        wait_timeout = min(time_remaining, wait_timeout)
 
     def stop(self) -> None:
         self.is_stopping.set()
@@ -222,7 +266,9 @@ class ApplicationServer:
 
         self.clients_lock = Lock()
         self.clients: Dict[Type[Application], ApplicationClient[Application]] = {}
-        self.poll_interval = self.grpc_env.get_poll_interval(self.application.name)
+        self.max_pull_interval = self.grpc_env.get_max_pull_interval(
+            self.application.name
+        )
         self.maximum_concurrent_rpcs = None
         self.compression = None
         self.has_started = Event()
@@ -246,39 +292,46 @@ class ApplicationServer:
                 compression=self.compression,
             )
             self.service = ApplicationService(
-                self.application, poll_interval=self.poll_interval
+                self.application, max_pull_interval=self.max_pull_interval
             )
             add_ApplicationServicer_to_server(self.service, self.grpc_server)
             self.grpc_server.add_secure_port(self.address, self.server_credentials)
             self.grpc_server.start()
-            self.executor.submit(self.lead_and_follow)
-            self.executor.submit(self.service.run)
-            self.executor.submit(self.service.self_prompt)
+            self.executor.submit(self.init_lead_and_follow)
+            self.executor.submit(self.service.pull_and_process_loop)
+            self.executor.submit(self.service.self_prompt_loop)
 
-    def lead_and_follow(self) -> None:
+    def init_lead_and_follow(self) -> None:
         system = self.grpc_env.get_system()
         if system is not None:
             for follower_name in system.leads[self.application.name]:
                 follower_cls = system.follower_cls(follower_name)
-                client = self.get_client(
+                follower_client = self.get_client(
                     owner_name=self.application.name,
                     app_class=follower_cls,
                     env=self.grpc_env.env,
                 )
-                recording_event_receiver = GRPCRecordingEventReceiver(client=client)
+                recording_event_receiver = GRPCRecordingEventReceiver(
+                    leader_name=self.application.name,
+                    follower_client=follower_client,
+                )
                 assert isinstance(self.application, Leader)
                 self.application.lead(follower=recording_event_receiver)
 
             for leader_name in system.follows[self.application.name]:
                 leader_cls = system.follower_cls(leader_name)
-                client = self.get_client(
+                leader_client = self.get_client(
                     owner_name=self.application.name,
                     app_class=leader_cls,
                     env=self.grpc_env.env,
                 )
-                notification_log = GRPCRemoteNotificationLog(client=client)
+                notification_log = GRPCRemoteNotificationLog(
+                    leader_client=leader_client
+                )
                 assert isinstance(self.application, Follower)
                 self.application.follow(name=leader_name, log=notification_log)
+                # Prompt to catch up on anything new.
+                self.service.prompt(leader_name)
 
     def get_client(
         self, owner_name: str, app_class: Type[TApplication], env: EnvType

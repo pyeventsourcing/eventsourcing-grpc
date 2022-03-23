@@ -16,19 +16,19 @@ class GrpcEnvironment:
         else:
             return address
 
-    def get_poll_interval(self, name: str) -> float:
+    def get_max_pull_interval(self, name: str) -> float:
         env = Environment(name=name, env=self.env)
-        poll_interval_str = env.get("POLL_INTERVAL")
-        if not poll_interval_str:
+        max_pull_interval_str = env.get("MAX_PULL_INTERVAL")
+        if not max_pull_interval_str:
             return 0
         try:
-            poll_interval = float(poll_interval_str)
+            max_pull_interval = float(max_pull_interval_str)
         except ValueError:
             raise ValueError(
-                f"Could not covert POLL_INTERVAL string to float: {poll_interval_str}"
+                "Could not covert MAX_PULL_INTERVAL to float: {max_pull_interval_str}"
             ) from None
         else:
-            return poll_interval
+            return max_pull_interval
 
     def get_system(self) -> Optional[System]:
         system_topic = self.env.get("SYSTEM_TOPIC")

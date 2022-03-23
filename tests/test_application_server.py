@@ -24,7 +24,7 @@ env_orders_and_reservations: EnvType = {
     "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
     "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
     "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
-    "POLL_INTERVAL": "1",
+    "MAX_PULL_INTERVAL": "1",
 }
 
 hostname = socket.gethostname()
@@ -220,3 +220,6 @@ class TestApplicationServer(TestCase):
         self.assertEqual(
             notifications[1].topic, "eventsourcing_grpc.example:Order.Reserved"
         )
+
+        # Let everything finish processing.
+        sleep(0.1)
