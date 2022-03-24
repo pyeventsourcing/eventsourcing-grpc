@@ -2,10 +2,7 @@ version: '2'
 
 services:
   orders:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: "eventsourcing-grpc-example:latest"
+    image: "docker.io/library/pyeventsourcing/eventsourcing-grpc:latest"
     environment:
       APPLICATION_TOPIC: "eventsourcing_grpc.example:Orders"
       SYSTEM_TOPIC: "eventsourcing_grpc.example:system"
@@ -22,10 +19,7 @@ services:
       - "50051:50051"
 
   reservations:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: "eventsourcing-grpc-example:latest"
+    image: "docker.io/library/pyeventsourcing/eventsourcing-grpc:latest"
     environment:
       APPLICATION_TOPIC: "eventsourcing_grpc.example:Reservations"
       SYSTEM_TOPIC: "eventsourcing_grpc.example:system"
@@ -42,10 +36,7 @@ services:
       - "50052:50052"
 
   payments:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: "eventsourcing-grpc-example:latest"
+    image: "docker.io/library/pyeventsourcing/eventsourcing-grpc:latest"
     environment:
       APPLICATION_TOPIC: "eventsourcing_grpc.example:Payments"
       SYSTEM_TOPIC: "eventsourcing_grpc.example:system"

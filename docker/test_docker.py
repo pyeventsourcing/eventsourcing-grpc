@@ -19,7 +19,7 @@ ssl_path = os.path.join(os.path.dirname(__file__), "..", "ssl")
 system_env = {
     # Hostname must match cert CN, depends on '127.0.0.1 orders' in '/etc/hosts'
     "ORDERS_GRPC_SERVER_ADDRESS": "orders:50051",  #
-    "GRPC_SSL_ROOT_CERTIFICATE_PATH": os.path.join(ssl_path, "root", "root.crt"),
+    "GRPC_SSL_ROOT_CERTIFICATE_PATH": os.path.join(ssl_path, hostname, "root.crt"),
     "GRPC_SSL_PRIVATE_KEY_PATH": os.path.join(ssl_path, hostname, f"{hostname}.key"),
     "GRPC_SSL_CERTIFICATE_PATH": os.path.join(ssl_path, hostname, f"{hostname}.crt"),
 }
