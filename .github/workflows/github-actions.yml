@@ -162,7 +162,7 @@ jobs:
         with:
           path: /home/runner/.local
           key: os-${{ matrix.os }}-python-${{ matrix.python-version}}-${{ hashFiles('**/poetry.lock') }}
-      - name: start minikube
+      - name: Start minikube
         id: minikube
         uses: medyagh/setup-minikube@master
 
@@ -185,7 +185,7 @@ jobs:
         run: make kubernetes-services
 
       - name: Create Kubernetes deployments
-        run: make kubernetes-services
+        run: make kubernetes-deployments
 
       - name: Tunnel to minikube
         run: minikube tunnel &
