@@ -129,5 +129,69 @@ jobs:
       - name: Configure hosts
         run: sudo echo "127.0.0.1 orders" | sudo tee -a /etc/hosts
 
+      - name: Build Python distribution
+        run: make python-dist
+
+      - name: Build Docker container image
+        run: make container-image
+
+      - name: Start Docker containers
+        run: make compose-up
+
       - name: Run tests
-        run: make python-dist container-image compose-up test-docker compose-down
+        run: make test-docker
+
+      - name: Stop Docker containers
+        run: make compose-down
+
+  kubernetes:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10"]
+        os: [ubuntu-20.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up cache
+        uses: actions/cache@v2
+        with:
+          path: /home/runner/.local
+          key: os-${{ matrix.os }}-python-${{ matrix.python-version}}-${{ hashFiles('**/poetry.lock') }}
+      - name: start minikube
+        id: minikube
+        uses: medyagh/setup-minikube@master
+
+      - name: Generate SSL/TLS certificates
+        run: make ssl
+
+      - name: Configure hosts
+        run: sudo echo "127.0.0.1 orders" | sudo tee -a /etc/hosts
+
+      - name: Build Python distribution
+        run: make python-dist
+
+      - name: Build Docker container image in minikube
+        run: make minikube-container-image
+
+      - name: Create Kubernetes secrets
+        run: make kubernetes-secrets
+
+      - name: Create Kubernetes services
+        run: make kubernetes-services
+
+      - name: Create Kubernetes deployments
+        run: make kubernetes-services
+
+      - name: Tunnel to minikube
+        run: minikube tunnel &
+
+      - name: Wait for tunnel
+        run: sleep 10
+
+      - name: Run test
+        run: make test-docker
