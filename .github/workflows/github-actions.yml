@@ -191,10 +191,16 @@ jobs:
         run: make kubernetes-deployments
 
       - name: Wait for services
-        run: sleep 10 && kubectl get pods && kubectl get services && kubectl get ep
+        run: |
+          sleep 10
+          kubectl get pods
+          kubectl get services
+          kubectl get ep
 
       - name: Tunnel to minikube
-        run: minikube tunnel &; sleep 10
+        run: |
+          minikube tunnel &
+          sleep 10
 
       - name: Run test
         run: make test-docker

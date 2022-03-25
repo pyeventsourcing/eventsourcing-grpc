@@ -232,8 +232,11 @@ kubernetes-logs-payments:
 
 .PHONY: kubernetes-attach-orders
 kubernetes-attach-orders:
-	kubectl exec -it $(shell kubectl get pods | grep -o "orders\S*") --container orders -- /bin/bash
+	kubectl exec -it $$(shell kubectl get pods | grep -o "orders\S*") --container orders -- /bin/bash
 
+.PHONY: kubernetes-port-forward-orders
+kubernetes-port-forward-orders:
+	kubectl port-forward $$(kubectl get pods | grep -o "orders\S*" | tail -n1) 50051:50051
 
 .PHONY: kubernetes-attach-reservations
 kubernetes-attach-reservations:
