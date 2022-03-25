@@ -197,9 +197,14 @@ jobs:
           kubectl get services
           kubectl get ep
 
-      - name: Tunnel to minikube
+#      - name: Tunnel to minikube
+#        run: |
+#          minikube tunnel &
+#          sleep 10
+#
+      - name: Forward port
         run: |
-          minikube tunnel &
+          make kubernetes-port-forward-orders &
           sleep 10
 
       - name: Run test
