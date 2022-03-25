@@ -3,7 +3,7 @@ FROM python:3.10
 WORKDIR /app
 
 # Install eventsourcing_grpc.
-COPY ../dist dist
+COPY ./dist dist
 RUN pip install dist/*.whl
 RUN rm -r dist
 ENV PYTHONUNBUFFERED = 1

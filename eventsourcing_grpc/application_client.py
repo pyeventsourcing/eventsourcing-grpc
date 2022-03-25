@@ -123,7 +123,6 @@ class ApplicationClient(Generic[TApplication]):
             attempts += 1
             start = time()
             self.close()
-            # Todo: Support secure channels.
             self.channel = grpc.secure_channel(
                 self.address, credentials=self.credentials
             )
@@ -133,17 +132,30 @@ class ApplicationClient(Generic[TApplication]):
             try:
                 future.result(timeout=connect_deadline)
             except FutureTimeoutError:
-                print(
-                    f"Client {self.owner_name} timed out connecting to",
-                    f"address {self.address}",
-                    f"after {(time() - start):.2f}s",
-                    f"(attempt {attempts})",
-                )
                 if max_attempts - attempts == 0:
+                    print(
+                        f"Client {self.owner_name} failed to connect to",
+                        f"address {self.address}",
+                        f"after {(time() - start):.2f}s",
+                        f"(attempt {attempts}).",
+                    )
                     raise ChannelConnectTimeout(self.address) from None
                 else:
+                    print(
+                        f"Client {self.owner_name} timed out connecting to",
+                        f"address {self.address}",
+                        f"after {(time() - start):.2f}s",
+                        f"(attempt {attempts}).",
+                        "Retrying...",
+                    )
                     continue
             self.stub = ApplicationStub(self.channel)
+            print(
+                f"Client {self.owner_name} connected successfully to",
+                f"address {self.address}",
+                f"after {(time() - start):.2f}s",
+                f"(attempt {attempts})",
+            )
             break
 
     def handle_channel_state_change(

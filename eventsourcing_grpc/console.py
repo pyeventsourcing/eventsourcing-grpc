@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import traceback
 from typing import cast
@@ -15,6 +16,7 @@ def run_application_server() -> None:
     try:
         application_topic = os.environ["APPLICATION_TOPIC"]
         print("Starting", application_topic)
+        print("Hostname", socket.gethostname())
         # sys.stdout.write(f"Starting subprocess {application_topic}\n")
         sys.stdout.flush()
         system_topic = os.environ["SYSTEM_TOPIC"]

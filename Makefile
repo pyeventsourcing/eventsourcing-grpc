@@ -4,8 +4,9 @@
 POETRY ?= poetry
 POETRY_INSTALLER_URL ?= https://install.python-poetry.org
 
-CONTAINER_IMAGE_GRPC=docker.io/library/pyeventsourcing/eventsourcing-grpc:latest
-CONTAINER_IMAGE_GRPC_EXAMPLE=docker.io/library/eventsourcing-grpc-example:latest
+# CONTAINER_IMAGE_GRPC=docker.io/library/pyeventsourcing/eventsourcing-grpc:latest
+CONTAINER_IMAGE_GRPC=eventsourcing-grpc:v1
+# CONTAINER_IMAGE_GRPC_EXAMPLE=docker.io/library/eventsourcing-grpc-example:latest
 
 COMPOSE_FILE ?= docker/docker-compose.yaml
 COMPOSE_PROJECT_NAME ?= eventsourcing_grpc
@@ -91,8 +92,8 @@ grpc-stubs:
 	  --mypy_out=. \
 	  protos/eventsourcing_grpc/protos/application.proto
 
-.PHONY: build-pkg
-build:
+.PHONY: python-dist
+python-dist:
 	rm -r ./dist/ || true
 	$(POETRY) build
 # 	$(POETRY) build -f sdist    # build source distribution only
@@ -108,7 +109,7 @@ ssl:
 	HOSTNAME=orders make ssl-server
 	HOSTNAME=reservations make ssl-server
 	HOSTNAME=payments make ssl-server
-	make rm-ssl-root
+	make rm-ssl-root-key
 
 .PHONY: ssl-root
 ssl-root:
@@ -121,9 +122,9 @@ ssl-root:
         -sha256 -days 1024 -out ssl/root/root.crt \
         -subj "/C=GB/ST=London/L=London/O=IT/CN=root.local"
 
-.PHONY: rm-ssl-root
-rm-ssl-root:
-	rm -rf ssl/root
+.PHONY: rm-ssl-root-key
+rm-ssl-root-key:
+	rm -f ssl/root/root.key
 
 .PHONY: ssl-server
 ssl-server:
@@ -148,37 +149,101 @@ ssl-server:
 .PHONY: build-image
 build-image:
 	docker build -t $(CONTAINER_IMAGE_GRPC) -f ./docker/Dockerfile ./
-# 	docker build -t $(CONTAINER_IMAGE_GRPC_EXAMPLE) ./
 
-.PHONY: docker-pull
-docker-pull:
+.PHONY: compose-pull
+compose-pull:
 	@docker-compose pull
 
-.PHONY: docker-build
-docker-build:
+.PHONY: compose-build
+compose-build:
 	@docker-compose build
 
-.PHONY: docker-up
-docker-up:
+.PHONY: compose-up
+compose-up:
 	@docker-compose up -d
 	@docker-compose ps
 
-.PHONY: docker-stop
-docker-stop:
+.PHONY: compose-stop
+compose-stop:
 	@docker-compose stop
 
-.PHONY: docker-down
-docker-down:
+.PHONY: compose-down
+compose-down:
 	@docker-compose down -v --remove-orphans
 
-.PHONY: docker-logs
-docker-logs:
+.PHONY: compose-logs
+compose-logs:
 	@docker-compose logs --follow --tail="all"
 
-.PHONY: docker-ps
-docker-ps:
+.PHONY: compose-ps
+compose-ps:
 	docker-compose ps
 
 .PHONY: test-docker
 test-docker:
 	$(POETRY) run python -m unittest discover docker -k test_order
+
+.PHONY: minikube-container-image
+minikube-container-image:
+	@eval $$(minikube docker-env) && docker build -t $(CONTAINER_IMAGE_GRPC) -f ./docker/Dockerfile ./
+
+.PHONY: kubernetes-secrets
+kubernetes-secrets:
+
+	kubectl delete secret root-ssl-secret --ignore-not-found
+	kubectl create secret generic root-ssl-secret \
+	--from-file=root.crt=ssl/root/root.crt
+
+	kubectl delete secret orders-ssl-secret --ignore-not-found
+	kubectl create secret tls orders-ssl-secret \
+	--key ./ssl/orders/orders.key --cert ./ssl/orders/orders.crt
+
+	kubectl delete secret reservations-ssl-secret --ignore-not-found
+	kubectl create secret tls reservations-ssl-secret \
+	--key ./ssl/reservations/reservations.key --cert ./ssl/reservations/reservations.crt
+
+	kubectl delete secret payments-ssl-secret --ignore-not-found
+	kubectl create secret tls payments-ssl-secret \
+	--key ./ssl/payments/payments.key --cert ./ssl/payments/payments.crt
+
+.PHONY: kubernetes-deployments
+kubernetes-deployments:
+	kubectl apply -f ./kubernetes/orders-deployment.yaml
+	kubectl apply -f ./kubernetes/reservations-deployment.yaml
+	kubectl apply -f ./kubernetes/payments-deployment.yaml
+
+.PHONY: kubernetes-services
+kubernetes-services:
+	kubectl apply -f ./kubernetes/orders-service.yaml
+	kubectl apply -f ./kubernetes/reservations-service.yaml
+	kubectl apply -f ./kubernetes/payments-service.yaml
+
+.PHONY: kubernetes-logs-orders
+kubernetes-logs-orders:
+	kubectl logs $$(kubectl get pods | grep -o "orders\S*" | tail -n1) --follow
+
+.PHONY: kubernetes-logs-reservations
+kubernetes-logs-reservations:
+	kubectl logs $$(kubectl get pods | grep -o "reservations\S*" | tail -n1) --follow
+
+.PHONY: kubernetes-logs-payments
+kubernetes-logs-payments:
+	kubectl logs $$(kubectl get pods | grep -o "payments\S*" | tail -n1) --follow
+
+.PHONY: kubernetes-attach-orders
+kubernetes-attach-orders:
+	kubectl exec -it $(shell kubectl get pods | grep -o "orders\S*") --container orders -- /bin/bash
+
+
+.PHONY: kubernetes-attach-reservations
+kubernetes-attach-reservations:
+	kubectl logs $$(kubectl get pods | grep -o "orders\S*" | tail -n1) --follow
+
+.PHONY: kubernetes-attach-payments
+kubernetes-attach-payments:
+	kubectl logs $$(kubectl get pods | grep -o "orders\S*" | tail -n1) --follow
+
+.PHONY: kubernetes-ingress
+kubernetes-ingress:
+	minikube addons enable ingress
+

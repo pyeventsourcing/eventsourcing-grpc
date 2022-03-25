@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reservations
+  labels:
+    system: orders
+spec:
+  selector:
+    matchLabels:
+      app: reservations
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: reservations
+    spec:
+      volumes:
+      - name: ssl-secret-volume
+        secret:
+          secretName: reservations-ssl-secret
+      - name: root-ssl-secret-volume
+        secret:
+          secretName: root-ssl-secret
+      containers:
+      - name: reservations
+        image: "eventsourcing-grpc:v1"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 50052
+        volumeMounts:
+          - mountPath: /app/ssl
+            name: ssl-secret-volume
+          - mountPath: /app/root-ssl
+            name: root-ssl-secret-volume
+        env:
+          - name: APPLICATION_TOPIC
+            value: "eventsourcing_grpc.example:Reservations"
+          - name: SYSTEM_TOPIC
+            value: "eventsourcing_grpc.example:system"
+          - name: ORDERS_GRPC_SERVER_ADDRESS
+            value: "orders:50051"
+          - name: RESERVATIONS_GRPC_SERVER_ADDRESS
+            value: "0.0.0.0:50052"
+          - name: PAYMENTS_GRPC_SERVER_ADDRESS
+            value: "payments:50053"
+          - name: MAX_PULL_INTERVAL
+            value: "10"
+          - name: GRPC_SSL_PRIVATE_KEY_PATH
+            value: /app/ssl/tls.key
+          - name: GRPC_SSL_CERTIFICATE_PATH
+            value: /app/ssl/tls.crt
+          - name: GRPC_SSL_ROOT_CERTIFICATE_PATH
+            value: /app/root-ssl/root.crt
+#          - name: GRPC_TRACE
+#            value: all
+#          - name: GRPC_VERBOSITY
+#            value: DEBUG
