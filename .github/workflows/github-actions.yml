@@ -166,6 +166,9 @@ jobs:
         id: minikube
         uses: medyagh/setup-minikube@master
 
+      - name: Enable ingress addon in minikube
+        run: minikube addons enable ingress
+
       - name: Generate SSL/TLS certificates
         run: make ssl
 
