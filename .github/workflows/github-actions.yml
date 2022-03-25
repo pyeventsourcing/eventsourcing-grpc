@@ -92,7 +92,7 @@ jobs:
 #          PGPASSWORD=postgres psql -c 'CREATE DATABASE {{cookiecutter.project_slug}};' -U postgres -h localhost
 #          PGPASSWORD=postgres psql -c "CREATE USER eventsourcing WITH PASSWORD 'eventsourcing';" -U postgres -h localhost
       - name: Generate SSL/TLS certificates
-        run: make gen-certs
+        run: make ssl
       - name: Run tests
         run: make test
 #        env:
@@ -124,10 +124,10 @@ jobs:
         run: make install-packages  # just need 'eventsourcing_grpc' to be importable
 
       - name: Generate SSL/TLS certificates
-        run: make gen-certs
+        run: make ssl
 
       - name: Configure hosts
         run: sudo echo "127.0.0.1 orders" | sudo tee -a /etc/hosts
 
       - name: Run tests
-        run: make build docker-build docker-up test-docker docker-down
+        run: make python-dist container-image compose-up test-docker compose-down

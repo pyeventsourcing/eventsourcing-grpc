@@ -146,8 +146,8 @@ ssl-server:
     # Copy root cert.
 	cp ssl/root/root.crt ssl/$(HOSTNAME)/root.crt
 
-.PHONY: build-image
-build-image:
+.PHONY: container-image
+container-image:
 	docker build -t $(CONTAINER_IMAGE_GRPC) -f ./docker/Dockerfile ./
 
 .PHONY: compose-pull
