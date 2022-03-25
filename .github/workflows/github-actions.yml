@@ -190,11 +190,11 @@ jobs:
       - name: Create Kubernetes deployments
         run: make kubernetes-deployments
 
-      - name: Tunnel to minikube
-        run: minikube tunnel &
+      - name: Wait for services
+        run: sleep 10 && kubectl get pods && kubectl get services && kubecrl get ep
 
-      - name: Wait for tunnel
-        run: sleep 10
+      - name: Tunnel to minikube
+        run: minikube tunnel &; sleep 10
 
       - name: Run test
         run: make test-docker
