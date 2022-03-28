@@ -1,16 +1,14 @@
 import os
 import socket
 from time import sleep
-from typing import Type
 from unittest import TestCase
 from uuid import UUID
 
-from eventsourcing.application import Application
 from eventsourcing.system import System
 from eventsourcing.utils import EnvType
 
 from eventsourcing_grpc.application_client import ChannelConnectTimeout, create_client
-from eventsourcing_grpc.application_server import ApplicationServer
+from eventsourcing_grpc.application_server import ApplicationServer, start_server
 from eventsourcing_grpc.example import Orders, Reservations
 
 env_orders: EnvType = {
@@ -60,23 +58,16 @@ class TestApplicationServer(TestCase):
         self.assertFalse(server.has_started.is_set())
         self.assertTrue(server.has_stopped.is_set())
 
-    def _start_server(
-        self, app_class: Type[Application], env: EnvType
-    ) -> ApplicationServer:
-        server = ApplicationServer(app_class=app_class, env=env)
-        server.start()
-        return server
-
     def test_client_connect_failure(self) -> None:
         env = env_orders
         app_class = Orders
-        client = create_client("test", app_class, env)
+        client = create_client(app_class, env, owner_name="test")
         with self.assertRaises(ChannelConnectTimeout):
             client.connect(max_attempts=1)
 
     def test_client_connect_success(self) -> None:
-        _ = self._start_server(Orders, env_orders)
-        client = create_client("test", Orders, env_orders)
+        _ = start_server(Orders, env_orders)
+        client = create_client(Orders, env_orders, owner_name="test")
         client.connect(max_attempts=10)
 
     def test_ssl_credentials(self) -> None:
@@ -103,13 +94,13 @@ class TestApplicationServer(TestCase):
             "GRPC_SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
         }
 
-        _ = self._start_server(Orders, env_server)
-        client = create_client("test", Orders, env_client)
+        _ = start_server(Orders, env_server)
+        client = create_client(Orders, env_client, owner_name="test")
         client.connect(max_attempts=10)
 
     def test_call_application_method(self) -> None:
-        _ = self._start_server(Orders, env_orders)
-        client = create_client("test", Orders, env_orders)
+        _ = start_server(Orders, env_orders)
+        client = create_client(Orders, env_orders, owner_name="test")
         client.connect(max_attempts=10)
 
         # Create order.
@@ -124,8 +115,8 @@ class TestApplicationServer(TestCase):
         self.assertEqual(order["is_paid"], False)
 
     def test_get_notifications(self) -> None:
-        _ = self._start_server(Orders, env_orders)
-        client = create_client("test", Orders, env_orders)
+        _ = start_server(Orders, env_orders)
+        client = create_client(Orders, env_orders, owner_name="test")
         client.connect(max_attempts=10)
         app = client.app
 
@@ -186,10 +177,12 @@ class TestApplicationServer(TestCase):
     def test_lead_and_follow(self) -> None:
         # Set up.
         _ = (
-            self._start_server(Orders, env_orders_and_reservations),
-            self._start_server(Reservations, env_orders_and_reservations),
+            start_server(Orders, env_orders_and_reservations),
+            start_server(Reservations, env_orders_and_reservations),
         )
-        orders_client = create_client("test", Orders, env_orders_and_reservations)
+        orders_client = create_client(
+            Orders, env_orders_and_reservations, owner_name="test"
+        )
         orders_client.connect(max_attempts=10)
         app = orders_client.app
 

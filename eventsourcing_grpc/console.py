@@ -9,7 +9,7 @@ from typing import cast
 from eventsourcing.system import System
 from eventsourcing.utils import resolve_topic
 
-from eventsourcing_grpc.application_server import ApplicationServer
+from eventsourcing_grpc.application_server import start_server
 
 
 def run_application_server() -> None:
@@ -29,15 +29,14 @@ def run_application_server() -> None:
         if app_class.name in system.follows:
             app_class = system.follower_cls(app_class.name)
         # Get the address and start the application server.
-        app_server = ApplicationServer(app_class=app_class, env=os.environ)
-        app_server.start()
+        server = start_server(app_class=app_class, env=os.environ)
         # Wait for termination.
         try:
-            app_server.wait_for_termination()
+            server.wait_for_termination()
         except KeyboardInterrupt:
             pass
         finally:
-            app_server.stop()
+            server.stop()
     except BaseException:
         print(traceback.format_exc())
         # print("Exiting with status code 1 after error")

@@ -233,6 +233,8 @@ class ApplicationService(ApplicationServicer):
 
 class ApplicationServer:
     def __init__(self, app_class: Type[Application], env: EnvType) -> None:
+        self.has_started = Event()
+        self.has_stopped = Event()
         self.grpc_env = GrpcEnvironment(env=env)
         self.application = app_class(env=env)
         self.start_stop_lock = Lock()
@@ -271,8 +273,6 @@ class ApplicationServer:
         )
         self.maximum_concurrent_rpcs = None
         self.compression = None
-        self.has_started = Event()
-        self.has_stopped = Event()
 
     def start(self) -> None:
         """
@@ -297,6 +297,7 @@ class ApplicationServer:
             add_ApplicationServicer_to_server(self.service, self.grpc_server)
             self.grpc_server.add_secure_port(self.address, self.server_credentials)
             self.grpc_server.start()
+
             self.executor.submit(self.init_lead_and_follow)
             self.executor.submit(self.service.pull_and_process_loop)
             self.executor.submit(self.service.self_prompt_loop)
@@ -352,6 +353,7 @@ class ApplicationServer:
 
     def stop(self, grace: int = 30) -> None:
         with self.start_stop_lock:
+            # self.executor.shutdown(wait=False, cancel_futures=True)
             if not self.has_started.is_set():
                 return
             self.has_started.clear()
@@ -366,3 +368,9 @@ class ApplicationServer:
     def __del__(self) -> None:
         if hasattr(self, "has_stopped") and not self.has_stopped.is_set():
             self.stop()
+
+
+def start_server(app_class: Type[Application], env: EnvType) -> ApplicationServer:
+    server = ApplicationServer(app_class=app_class, env=env)
+    server.start()
+    return server

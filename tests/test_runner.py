@@ -1,3 +1,4 @@
+from datetime import datetime
 from itertools import count
 from threading import Thread
 from time import sleep
@@ -108,9 +109,12 @@ class TestRunner(TestCase):
 
         order_ids = []
 
+        started = datetime.now()
+
         def create_order() -> None:
             for _ in range(10000):
                 order_ids.append(orders.create_new_order())
+                sleep(0.0005)
                 # self.assertIsInstance(order1_id, UUID)
 
         def check_order() -> None:
@@ -120,10 +124,20 @@ class TestRunner(TestCase):
                     try:
                         order_id = order_ids[i]
                     except IndexError:
-                        sleep(0.01)
+                        sleep(0.1)
                         continue
-                    if orders.is_order_paid(order_id):
-                        print("Done order", i)
+                    order = orders.get_order(order_id)
+                    if order["is_paid"]:
+                        order_duration = (
+                            order["modified_on"] - order["created_on"]
+                        ).total_seconds()
+                        rate = (i + 1) / (datetime.now() - started).total_seconds()
+
+                        print(
+                            f"Done order {i}",
+                            f"duration: {order_duration:.4f}s",
+                            f"rate: {rate:.0f}/s",
+                        )
                         break
                     elif runner.has_errored.is_set():
                         self.fail("Runner error")

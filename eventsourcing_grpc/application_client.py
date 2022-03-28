@@ -293,10 +293,12 @@ class NotificationLogProxy(NotificationLog):
 
 
 def create_client(
-    owner_name: str, app_class: Type[TApplication], env: EnvType
+    app_class: Type[TApplication],
+    env: EnvType,
+    owner_name: str,
 ) -> ApplicationClient[TApplication]:
-    grpc_env = GrpcEnvironment(env=env)
     application = app_class(env=env)
+    grpc_env = GrpcEnvironment(env=env)
     client: ApplicationClient[TApplication] = ApplicationClient(
         owner_name=owner_name,
         address=grpc_env.get_server_address(app_class.name),
@@ -305,4 +307,15 @@ def create_client(
         ssl_private_key_path=grpc_env.get_ssl_private_key_path(),
         ssl_certificate_path=grpc_env.get_ssl_certificate_path(),
     )
+    return client
+
+
+def connect(
+    app_class: Type[TApplication],
+    env: EnvType,
+    owner_name: str = "",
+    max_attempts: int = 0,
+) -> ApplicationClient[TApplication]:
+    client = create_client(app_class=app_class, env=env, owner_name=owner_name)
+    client.connect(max_attempts=max_attempts)
     return client

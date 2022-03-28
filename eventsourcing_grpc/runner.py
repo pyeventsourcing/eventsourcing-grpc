@@ -12,7 +12,7 @@ from eventsourcing.system import Runner, System
 from eventsourcing.utils import EnvType, get_topic
 
 from eventsourcing_grpc.application_client import ApplicationClient
-from eventsourcing_grpc.application_server import ApplicationServer
+from eventsourcing_grpc.application_server import ApplicationServer, start_server
 from eventsourcing_grpc.environment import GrpcEnvironment
 
 
@@ -78,9 +78,7 @@ class GrpcRunner(Runner):
             self.start_server_subprocess(app_class)
 
     def start_server_inprocess(self, app_class: Type[Application]) -> None:
-        server = ApplicationServer(app_class=app_class, env=self._env)
-        server.start()
-        self.servers[app_class.name] = server
+        self.servers[app_class.name] = start_server(app_class=app_class, env=self._env)
 
     def start_server_subprocess(self, app_class: Type[Application]) -> None:
         # print("Starting server", app_class)
@@ -103,7 +101,7 @@ class GrpcRunner(Runner):
             transcoder = cls(env=env).construct_transcoder()
             address = GrpcEnvironment(self._env).get_server_address(cls.name)
             client = ApplicationClient(
-                owner_name="runner", address=address, transcoder=transcoder
+                owner_name=type(self).__name__, address=address, transcoder=transcoder
             )
             client.connect()
             self.clients[cls.name] = client
