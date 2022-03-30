@@ -26,25 +26,15 @@ class ApplicationStub(object):
             request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodRequest.SerializeToString,
             response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodReply.FromString,
         )
-        self.GetNotifications = channel.unary_unary(
-            "/eventsourcing_grpc.Application/GetNotifications",
-            request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsRequest.SerializeToString,
-            response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsReply.FromString,
-        )
-        self.Follow = channel.unary_unary(
-            "/eventsourcing_grpc.Application/Follow",
-            request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.FollowRequest.SerializeToString,
-            response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
-        )
-        self.Lead = channel.unary_unary(
-            "/eventsourcing_grpc.Application/Lead",
-            request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.LeadRequest.SerializeToString,
-            response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
-        )
         self.Prompt = channel.unary_unary(
             "/eventsourcing_grpc.Application/Prompt",
             request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.PromptRequest.SerializeToString,
             response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
+        )
+        self.GetNotifications = channel.unary_unary(
+            "/eventsourcing_grpc.Application/GetNotifications",
+            request_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsRequest.SerializeToString,
+            response_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsReply.FromString,
         )
 
 
@@ -63,25 +53,13 @@ class ApplicationServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
-    def GetNotifications(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details("Method not implemented!")
-        raise NotImplementedError("Method not implemented!")
-
-    def Follow(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details("Method not implemented!")
-        raise NotImplementedError("Method not implemented!")
-
-    def Lead(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details("Method not implemented!")
-        raise NotImplementedError("Method not implemented!")
-
     def Prompt(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def GetNotifications(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
@@ -100,25 +78,15 @@ def add_ApplicationServicer_to_server(servicer, server):
             request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodRequest.FromString,
             response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.MethodReply.SerializeToString,
         ),
-        "GetNotifications": grpc.unary_unary_rpc_method_handler(
-            servicer.GetNotifications,
-            request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsRequest.FromString,
-            response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsReply.SerializeToString,
-        ),
-        "Follow": grpc.unary_unary_rpc_method_handler(
-            servicer.Follow,
-            request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.FollowRequest.FromString,
-            response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.SerializeToString,
-        ),
-        "Lead": grpc.unary_unary_rpc_method_handler(
-            servicer.Lead,
-            request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.LeadRequest.FromString,
-            response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.SerializeToString,
-        ),
         "Prompt": grpc.unary_unary_rpc_method_handler(
             servicer.Prompt,
             request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.PromptRequest.FromString,
             response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.SerializeToString,
+        ),
+        "GetNotifications": grpc.unary_unary_rpc_method_handler(
+            servicer.GetNotifications,
+            request_deserializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsRequest.FromString,
+            response_serializer=eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsReply.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -190,93 +158,6 @@ class Application(object):
         )
 
     @staticmethod
-    def GetNotifications(
-        request,
-        target,
-        options=(),
-        channel_credentials=None,
-        call_credentials=None,
-        insecure=False,
-        compression=None,
-        wait_for_ready=None,
-        timeout=None,
-        metadata=None,
-    ):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            "/eventsourcing_grpc.Application/GetNotifications",
-            eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsRequest.SerializeToString,
-            eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsReply.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-        )
-
-    @staticmethod
-    def Follow(
-        request,
-        target,
-        options=(),
-        channel_credentials=None,
-        call_credentials=None,
-        insecure=False,
-        compression=None,
-        wait_for_ready=None,
-        timeout=None,
-        metadata=None,
-    ):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            "/eventsourcing_grpc.Application/Follow",
-            eventsourcing__grpc_dot_protos_dot_application__pb2.FollowRequest.SerializeToString,
-            eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-        )
-
-    @staticmethod
-    def Lead(
-        request,
-        target,
-        options=(),
-        channel_credentials=None,
-        call_credentials=None,
-        insecure=False,
-        compression=None,
-        wait_for_ready=None,
-        timeout=None,
-        metadata=None,
-    ):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            "/eventsourcing_grpc.Application/Lead",
-            eventsourcing__grpc_dot_protos_dot_application__pb2.LeadRequest.SerializeToString,
-            eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-        )
-
-    @staticmethod
     def Prompt(
         request,
         target,
@@ -295,6 +176,35 @@ class Application(object):
             "/eventsourcing_grpc.Application/Prompt",
             eventsourcing__grpc_dot_protos_dot_application__pb2.PromptRequest.SerializeToString,
             eventsourcing__grpc_dot_protos_dot_application__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def GetNotifications(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/eventsourcing_grpc.Application/GetNotifications",
+            eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsRequest.SerializeToString,
+            eventsourcing__grpc_dot_protos_dot_application__pb2.NotificationsReply.FromString,
             options,
             channel_credentials,
             insecure,

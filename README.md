@@ -1,9 +1,9 @@
 # Welcome to Eventsourcing gRPC
 
-This package provides gRPC server and client classes that support running an
-event-sourced application as a gRPC server. A gRPC client can be used to interact
-with the application server. Application command and query methods can be called
-remotely, and notifications selected remotely.
+This package provides a gRPC server class that runs an event-sourced application as
+a  gRPC server. A gRPC client class can be used to interact with the application
+server.  Application command and query methods can be called remotely, and
+notifications selected remotely.
 
 The package also provides a runner class, with the same interface as the Runner
 classes in the core eventsourcing library, which can run a system of event-sourced
@@ -75,7 +75,7 @@ app = client.app
 
 ```
 
-Call command and query methods on application using client's application proxy.
+Call command and query methods on application proxy.
 
 ```python
 # Create order.
@@ -98,60 +98,49 @@ assert notifications[0].id == 1
 assert notifications[0].originator_id == order_id
 assert notifications[0].originator_version == 1
 assert notifications[0].topic == "eventsourcing_grpc.example:Order.Created"
+
+
 ```
 
-Close client.
+Close client and stop server.
 
 ```python
 client.close()
-```
-
-Stop server.
-```python
 server.stop()
 ```
 
-```python
-from time import sleep
-
-# sleep(3)
-```
 
 ## gRPC system runner
 
-Define an event-sourced system.
+Define a system of event-sourced applications.
 
 ```python
 from eventsourcing_grpc.example import system
 ```
 
-Configure using environment variables.
-
-```python
-system_env = {
-    "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
-    "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
-    "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
-}
-```
-
-Run system using gRPC.
+Run a system of applications using the gRPC runner class.
 
 ```python
 
 from eventsourcing_grpc.runner import GrpcRunner
 
+system_env = {
+    "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
+    "RESERVATIONS_GRPC_SERVER_ADDRESS": "localhost:50052",
+    "PAYMENTS_GRPC_SERVER_ADDRESS": "localhost:50053",
+}
+
 runner = GrpcRunner(system=system, env=system_env)
 runner.start(with_subprocesses=True)
-
-if runner.has_errored.is_set():
-    raise AssertionError("Couldn't start runner")
 
 # Create an order.
 orders = runner.get(Orders)
 order1_id = orders.create_new_order()
 
+
 # Wait for the processing to happen.
+from time import sleep
+
 for _ in range(100):
     sleep(0.1)
     if orders.is_order_paid(order1_id):
@@ -178,9 +167,7 @@ assert notifications[2].originator_version == 3
 assert notifications[2].topic == "eventsourcing_grpc.example:Order.Paid"
 
 # Stop runner.
-sleep(1)
 runner.stop()
-
 ```
 
 ## Developers
@@ -197,7 +184,7 @@ dependencies such as Black, isort and pytest.
 
 Add tests in `./tests`. Add code in `./eventsourcing_grpc`.
 
-Generate SSL certificates and private keys for testing.
+Generate SSL/TLS certificates and private keys for testing.
 
     $ make ssl
 

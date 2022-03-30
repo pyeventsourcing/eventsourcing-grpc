@@ -1,10 +1,15 @@
 from datetime import datetime
 from itertools import count
-from threading import Thread
+from signal import SIGINT, SIGTERM, getsignal, signal, strsignal
+from threading import Event, Lock, Thread
 from time import sleep
+from typing import Any
 from unittest import TestCase
 from uuid import UUID
 
+from eventsourcing.utils import EnvType
+
+from eventsourcing_grpc.application_client import ClientClosedError, GrpcError
 from eventsourcing_grpc.example import Orders, system
 from eventsourcing_grpc.runner import GrpcRunner
 
@@ -31,18 +36,12 @@ class TestRunner(TestCase):
             print("Test number:", next(c))
             self._test_runner(with_subprocesses=True)
 
-    def _test_long_runner_with_subprocess_servers(self) -> None:
-        self._long_runner(with_subprocesses=True)
-
     def _test_runner(self, with_subprocesses: bool = False) -> None:
         # Set up.
-        runner = GrpcRunner(system=system, env=system_env)
-        runner.start(with_subprocesses=with_subprocesses)
-        if runner.has_errored.is_set():
-            self.fail("Couldn't start runner")
+        self.start_runner(system_env, with_subprocesses)
 
         # Create an order.
-        orders = runner.get(Orders)
+        orders = self.runner.get(Orders)
         order1_id = orders.create_new_order()
         self.assertIsInstance(order1_id, UUID)
 
@@ -51,7 +50,7 @@ class TestRunner(TestCase):
             sleep(0.1)
             if orders.is_order_paid(order1_id):
                 break
-            elif runner.has_errored.is_set():
+            elif self.runner.has_errored.is_set():
                 self.fail("Runner error")
         else:
             self.fail("Timeout waiting for order to be paid")
@@ -84,9 +83,13 @@ class TestRunner(TestCase):
         duration = last_event.timestamp - first_event.timestamp
         print("Duration:", duration)
 
-        runner.stop()
+    def _test_long_runner_with_inprocess_servers(self) -> None:
+        self._long_runner(with_subprocesses=False)
 
-    def _long_runner(self, with_subprocesses: bool = False) -> None:
+    def _test_long_runner_with_subprocess_servers(self) -> None:
+        self._long_runner(with_subprocesses=True)
+
+    def _long_runner(self, with_subprocesses: bool = False) -> None:  # noqa: C901
         # Set up.
         env = {
             "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
@@ -97,54 +100,84 @@ class TestRunner(TestCase):
         if with_subprocesses:
             env["SYSTEM_TOPIC"] = "eventsourcing_grpc.example:system"
 
-        runner = GrpcRunner(system=system, env=env)
-        runner.start(with_subprocesses=with_subprocesses)
-        if runner.has_errored.is_set():
-            self.fail("Couldn't start runner")
-
-        # sleep(1)
+        self.start_runner(env, with_subprocesses)
 
         # Create an order.
-        orders = runner.get(Orders)
+        orders = self.runner.get(Orders)
 
         order_ids = []
 
         started = datetime.now()
 
         def create_order() -> None:
-            for _ in range(10000):
-                order_ids.append(orders.create_new_order())
-                sleep(0.0005)
-                # self.assertIsInstance(order1_id, UUID)
+            try:
+                for _ in range(10000):
+                    # if self.test_errored.wait(0.0):
+                    #     break
+                    order_ids.append(orders.create_new_order())
+            except ClientClosedError:
+                if not self.is_terminated.is_set():
+                    print("Client closed in 'create_order()'")
+                    self.test_errored.set()
+                return
+            except GrpcError as e:
+                if not self.is_terminated.is_set():
+                    print("GRPC error in 'create_order()':", e)
+                    self.test_errored.set()
+                return
 
         def check_order() -> None:
-            for i in range(10000):
-                # Wait for the processing to happen.
-                for _ in range(100):
-                    try:
-                        order_id = order_ids[i]
-                    except IndexError:
-                        sleep(0.1)
-                        continue
-                    order = orders.get_order(order_id)
-                    if order["is_paid"]:
-                        order_duration = (
-                            order["modified_on"] - order["created_on"]
-                        ).total_seconds()
-                        rate = (i + 1) / (datetime.now() - started).total_seconds()
+            try:
+                for i in range(10000):
+                    # Wait for the processing to happen.
+                    # if i > 500:
+                    #     self.runner.stop()
+                    #     return
+                    for _ in range(100):
+                        try:
+                            order_id = order_ids[i]
+                        except IndexError:
+                            if self.test_errored.wait(0.1):
+                                break
+                            continue
+                        try:
+                            order = orders.get_order(order_id)
+                        except ClientClosedError:
+                            if not self.is_terminated.is_set():
+                                print("Client closed in 'check_order()'")
+                                self.test_errored.set()
+                            return
+                        except GrpcError as e:
+                            if not self.is_terminated.is_set():
+                                print("GRPC error in 'check_order()':", e)
+                                self.test_errored.set()
+                            return
+                        if order["is_paid"]:
+                            if i > 0 and i % 100 == 0:
+                                order_duration = (
+                                    order["modified_on"] - order["created_on"]
+                                ).total_seconds()
+                                rate = (i + 1) / (
+                                    datetime.now() - started
+                                ).total_seconds()
 
-                        print(
-                            f"Done order {i}",
-                            f"duration: {order_duration:.4f}s",
-                            f"rate: {rate:.0f}/s",
-                        )
-                        break
-                    elif runner.has_errored.is_set():
-                        self.fail("Runner error")
+                                print(
+                                    f"Done order {i}",
+                                    f"duration: {order_duration:.4f}s",
+                                    f"rate: {rate:.0f}/s",
+                                )
+                            break
+                        elif self.runner.has_errored.is_set():
+                            self.fail("Runner error")
+                        else:
+                            sleep(0.1)
                     else:
-                        sleep(0.1)
-                else:
-                    self.fail("Timeout waiting for order to be paid")
+                        self.fail("Timeout waiting for order to be paid")
+                    if self.test_errored.is_set():
+                        break
+            except KeyboardInterrupt:
+                self.test_errored.set()
+                raise
 
         thread1 = Thread(target=create_order)
         thread1.start()
@@ -152,3 +185,45 @@ class TestRunner(TestCase):
         thread2.start()
 
         thread2.join()
+
+        if self.test_errored.is_set():
+            if self.is_terminated.is_set():
+                self.fail("Test terminated by signal")
+            else:
+                self.fail("Test errored (see above)")
+
+    def setUp(self) -> None:
+        self.test_errored = Event()
+        self.orig_sigint_handler = getsignal(SIGINT)
+        self.orig_sigterm_handler = getsignal(SIGTERM)
+        self.lock = Lock()
+        self.is_terminated = Event()
+
+        def signal_handler(signum: int, _: Any) -> None:
+            self.is_terminated.set()
+            print(
+                f"Test process received signal {signum} ",
+                f"('{strsignal(signum)}'), stopping runner...",
+            )
+            self.test_errored.set()
+            with self.lock:
+                if hasattr(self, "runner"):
+                    self.runner.stop()
+
+        signal(SIGINT, signal_handler)
+        signal(SIGTERM, signal_handler)
+
+    def tearDown(self) -> None:
+        if hasattr(self, "runner"):
+            self.runner.stop()
+        signal(SIGINT, self.orig_sigint_handler)
+        signal(SIGTERM, self.orig_sigterm_handler)
+
+    def start_runner(self, env: EnvType, with_subprocesses: bool) -> None:
+        with self.lock:
+            if not self.is_terminated.is_set():
+                self.runner = GrpcRunner(system=system, env=env)
+        if hasattr(self, "runner"):
+            self.runner.start(with_subprocesses=with_subprocesses)
+            if self.runner.has_errored.is_set():
+                self.fail("Couldn't start runner")

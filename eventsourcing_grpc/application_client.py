@@ -1,5 +1,6 @@
 from functools import wraps
 from re import fullmatch
+from threading import Event
 from time import time
 from typing import Any, Generic, List, Optional, Sequence, Type, cast
 from uuid import UUID
@@ -22,8 +23,6 @@ from grpc._channel import _InactiveRpcError
 from eventsourcing_grpc.environment import GrpcEnvironment
 from eventsourcing_grpc.protos.application_pb2 import (
     Empty,
-    FollowRequest,
-    LeadRequest,
     MethodRequest,
     NotificationsReply,
     NotificationsRequest,
@@ -36,19 +35,19 @@ class GrpcError(Exception):
     pass
 
 
-class ServiceUnavailable(Exception):
+class ServiceUnavailable(GrpcError):
     pass
 
 
-class DeadlineExceeded(Exception):
+class DeadlineExceeded(GrpcError):
     pass
 
 
-class ChannelConnectTimeout(Exception):
+class ChannelConnectTimeout(GrpcError):
     pass
 
 
-class ChannelNotRunning(Exception):
+class ChannelNotRunning(GrpcError):
     pass
 
 
@@ -71,6 +70,10 @@ def errors(f: Any) -> Any:
     return wrapper
 
 
+class ClientClosedError(Exception):
+    pass
+
+
 class ApplicationClient(Generic[TApplication]):
     def __init__(
         self,
@@ -81,9 +84,11 @@ class ApplicationClient(Generic[TApplication]):
         ssl_root_certificate_path: Optional[str] = None,
         ssl_private_key_path: Optional[str] = None,
         ssl_certificate_path: Optional[str] = None,
+        is_stopping: Optional[Event] = None,
     ) -> None:
         self.owner_name = owner_name
         self.address = address
+        self.is_stopping = is_stopping or Event()
         if fullmatch("localhost:[0-9]+", self.address):
             self.credentials = local_channel_credentials()
         else:
@@ -120,9 +125,11 @@ class ApplicationClient(Generic[TApplication]):
         """
         attempts = 0
         while True:
+            if self.is_stopping and self.is_stopping.is_set():
+                return
             attempts += 1
             start = time()
-            self.close()
+            self._close()
             self.channel = grpc.secure_channel(
                 self.address, credentials=self.credentials
             )
@@ -146,6 +153,7 @@ class ApplicationClient(Generic[TApplication]):
                         f"address {self.address}",
                         f"after {(time() - start):.2f}s",
                         f"(attempt {attempts}).",
+                        f"is_stopping event status: {self.is_stopping.is_set()}",
                         "Retrying...",
                     )
                     continue
@@ -172,19 +180,32 @@ class ApplicationClient(Generic[TApplication]):
         Closes the client's GPRC channel.
         """
         self.is_closed = True
+        self._close()
+
+    def _close(self) -> None:
         if hasattr(self, "channel") and self.channel is not None:
+            # print("closing channel...")
             self.channel.close()
+            # print("closed channel")
             self.channel = None
         # Todo: Deal with calls when stub is None.
-        if hasattr(self, "stub"):
-            self.stub = None
+        # if hasattr(self, "stub"):
+        #     self.stub = None
 
     @errors
     def ping(self) -> None:
         """
         Sends a Ping request to the server.
         """
+        self.assert_client_not_closed()
         self.stub.Ping(Empty(), timeout=self.request_deadline)
+
+    @errors
+    def prompt(self, name: str) -> None:
+        self.assert_client_not_closed()
+        self.stub.Prompt(
+            PromptRequest(upstream_name=name), timeout=self.request_deadline
+        )
 
     @errors
     def get_notifications(
@@ -194,6 +215,7 @@ class ApplicationClient(Generic[TApplication]):
         stop: Optional[int] = None,
         topics: Sequence[str] = (),
     ) -> List[Notification]:
+        self.assert_client_not_closed()
         request = NotificationsRequest(
             start=str(start),
             limit=str(limit),
@@ -217,27 +239,8 @@ class ApplicationClient(Generic[TApplication]):
 
     @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
     @errors
-    def follow(self, name: str, address: str) -> None:
-        self.stub.Follow(
-            FollowRequest(name=name, address=address), timeout=self.request_deadline
-        )
-
-    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
-    @errors
-    def lead(self, name: str, address: str) -> None:
-        self.stub.Lead(
-            LeadRequest(name=name, address=address), timeout=self.request_deadline
-        )
-
-    @errors
-    def prompt(self, name: str) -> None:
-        self.stub.Prompt(
-            PromptRequest(upstream_name=name), timeout=self.request_deadline
-        )
-
-    @retry((DeadlineExceeded, ServiceUnavailable), max_attempts=10, wait=1)
-    @errors
     def call_application_method(self, method_name: str, args: Any, kwargs: Any) -> Any:
+        self.assert_client_not_closed()
         request = MethodRequest(
             method_name=method_name,
             args=self.transcoder.encode(args),
@@ -247,6 +250,10 @@ class ApplicationClient(Generic[TApplication]):
             request, timeout=self.request_deadline
         )
         return self.transcoder.decode(response.data)
+
+    def assert_client_not_closed(self) -> None:
+        if self.is_closed:
+            raise ClientClosedError("Client is closed")
 
 
 class ApplicationMethodProxy:
@@ -296,6 +303,7 @@ def create_client(
     app_class: Type[TApplication],
     env: EnvType,
     owner_name: str,
+    is_stopping: Optional[Event] = None,
 ) -> ApplicationClient[TApplication]:
     application = app_class(env=env)
     grpc_env = GrpcEnvironment(env=env)
@@ -306,6 +314,7 @@ def create_client(
         ssl_root_certificate_path=grpc_env.get_ssl_root_certificate_path(),
         ssl_private_key_path=grpc_env.get_ssl_private_key_path(),
         ssl_certificate_path=grpc_env.get_ssl_certificate_path(),
+        is_stopping=is_stopping,
     )
     return client
 

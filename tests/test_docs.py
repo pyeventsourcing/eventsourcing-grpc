@@ -3,7 +3,7 @@ import sys
 from os.path import dirname, join
 
 # from subprocess import PIPE, STDOUT
-from subprocess import Popen
+from subprocess import Popen, TimeoutExpired
 from tempfile import NamedTemporaryFile
 from unittest.case import TestCase
 
@@ -216,21 +216,41 @@ class TestDocs(TestCase):
         # Run the code and catch errors.
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
-        p = Popen([sys.executable, temp_path], env=env)
-        # out, err = p.communicate(timeout=10)
+        proc = Popen([sys.executable, temp_path], close_fds=True, env=env)
+        # try:
+        #     out, err = proc.communicate(timeout=5)
+        # except TimeoutExpired:
+        #     proc.terminate()
+        #     try:
+        #         out, err = proc.communicate(timeout=5)
+        #     except TimeoutExpired:
+        #         proc.kill()
+        #         out, err = proc.communicate(timeout=5)
+        # finally:
+        #     # Close (deletes) the tempfile.
+        #     tempfile.close()
+
+        # # Check for errors running the code.
+        # print(out)
+        # print(err)
         # out = out.decode("utf8")
         # err = err.decode("utf8")
         # out = out.replace(temp_path, doc_path)
         # err = err.replace(temp_path, doc_path)
-        exit_status = p.wait(timeout=30)
-
-        # print(out)
-        # print(err)
-
-        # # Check for errors running the code.
-        if exit_status:
-            # self.fail(out + err)
-            self.fail(f"Exited with status code {exit_status}")
-
-        # Close (deletes) the tempfile.
-        tempfile.close()
+        try:
+            exit_status = proc.wait(timeout=60)
+        except TimeoutExpired:
+            proc.terminate()
+            try:
+                exit_status = proc.wait(timeout=5)
+                self.fail(f"Terminated after timeout: {exit_status}")
+            except TimeoutExpired:
+                proc.kill()
+                exit_status = proc.wait()
+                self.fail(f"Killed after timeout: {exit_status}")
+        else:
+            if exit_status:
+                self.fail(f"Non-zero exit status: {exit_status}")
+        finally:
+            # Close (deletes) the tempfile.
+            tempfile.close()

@@ -1,14 +1,27 @@
 import os
 import socket
+from datetime import datetime
+from threading import Event
 from time import sleep
+from typing import Any, List, Type
 from unittest import TestCase
 from uuid import UUID
 
+from eventsourcing.application import Application, TApplication
 from eventsourcing.system import System
 from eventsourcing.utils import EnvType
 
-from eventsourcing_grpc.application_client import ChannelConnectTimeout, create_client
-from eventsourcing_grpc.application_server import ApplicationServer, start_server
+from eventsourcing_grpc.application_client import (
+    ApplicationClient,
+    ChannelConnectTimeout,
+    connect,
+    create_client,
+)
+from eventsourcing_grpc.application_server import (
+    ApplicationServer,
+    start_server,
+    start_server_subprocess,
+)
 from eventsourcing_grpc.example import Orders, Reservations
 
 env_orders: EnvType = {
@@ -38,7 +51,7 @@ class TestApplicationServer(TestCase):
         self.assertTrue(server.has_started.is_set())
         self.assertFalse(server.has_stopped.is_set())
 
-        server.stop()
+        server.stop(wait=True)
         self.assertFalse(server.has_started.is_set())
         self.assertTrue(server.has_stopped.is_set())
 
@@ -50,25 +63,22 @@ class TestApplicationServer(TestCase):
         self.assertTrue(server.has_started.is_set())
         self.assertFalse(server.has_stopped.is_set())
 
-        server.stop()
+        server.stop(wait=True)
         self.assertFalse(server.has_started.is_set())
         self.assertTrue(server.has_stopped.is_set())
 
-        server.stop()
+        server.stop(wait=True)
         self.assertFalse(server.has_started.is_set())
         self.assertTrue(server.has_stopped.is_set())
 
     def test_client_connect_failure(self) -> None:
-        env = env_orders
-        app_class = Orders
-        client = create_client(app_class, env, owner_name="test")
+        # Don't start a server.
         with self.assertRaises(ChannelConnectTimeout):
-            client.connect(max_attempts=1)
+            self.connect(Orders, env_orders, owner_name="test", max_attempts=2)
 
     def test_client_connect_success(self) -> None:
-        _ = start_server(Orders, env_orders)
-        client = create_client(Orders, env_orders, owner_name="test")
-        client.connect(max_attempts=10)
+        self.start_server(Orders, env_orders)
+        self.connect(Orders, env_orders, owner_name="test", max_attempts=2)
 
     def test_ssl_credentials(self) -> None:
         ssl_private_key_path = os.path.join(
@@ -81,12 +91,6 @@ class TestApplicationServer(TestCase):
             os.path.dirname(__file__), "..", "ssl", hostname, "root.crt"
         )
         self.assertNotEqual(hostname, "localhost")
-        env_client: EnvType = {
-            "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
-            "GRPC_SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
-            "GRPC_SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
-            "GRPC_SSL_CERTIFICATE_PATH": ssl_certificate_path,
-        }
         env_server: EnvType = {
             "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
             "GRPC_SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
@@ -94,31 +98,54 @@ class TestApplicationServer(TestCase):
             "GRPC_SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
         }
 
-        _ = start_server(Orders, env_server)
-        client = create_client(Orders, env_client, owner_name="test")
-        client.connect(max_attempts=10)
+        self.start_server(Orders, env_server)
+        env_client: EnvType = {
+            "ORDERS_GRPC_SERVER_ADDRESS": f"{hostname}:50051",
+            "GRPC_SSL_ROOT_CERTIFICATE_PATH": ssl_root_certificate_path,
+            "GRPC_SSL_PRIVATE_KEY_PATH": ssl_private_key_path,
+            "GRPC_SSL_CERTIFICATE_PATH": ssl_certificate_path,
+        }
+        self.connect(Orders, env_client, owner_name="test", max_attempts=10)
 
     def test_call_application_method(self) -> None:
-        _ = start_server(Orders, env_orders)
-        client = create_client(Orders, env_orders, owner_name="test")
-        client.connect(max_attempts=10)
+        self.start_server(Orders, env_orders)
+        app = self.connect(Orders, env_orders, "test", max_attempts=10).app
 
         # Create order.
-        order_id = client.app.create_new_order()
+        order_id = app.create_new_order()
         self.assertIsInstance(order_id, UUID)
 
         # Get order.
-        order = client.app.get_order(order_id)
+        order = app.get_order(order_id)
         self.assertIsInstance(order, dict)
         self.assertEqual(order["id"], order_id)
         self.assertEqual(order["is_reserved"], False)
         self.assertEqual(order["is_paid"], False)
 
-    def test_get_notifications(self) -> None:
-        _ = start_server(Orders, env_orders)
+    def _test_repeat_call_application_method(self) -> None:
+        self.start_server(Orders, env_orders)
         client = create_client(Orders, env_orders, owner_name="test")
         client.connect(max_attempts=10)
-        app = client.app
+
+        started = datetime.now()
+        for i in range(10000):
+            # Create order.
+            order_id = client.app.create_new_order()
+            self.assertIsInstance(order_id, UUID)
+
+            # Get order.
+            order = client.app.get_order(order_id)
+            self.assertIsInstance(order, dict)
+            self.assertEqual(order["id"], order_id)
+            self.assertEqual(order["is_reserved"], False)
+            self.assertEqual(order["is_paid"], False)
+
+            rate = (i + 1) / (datetime.now() - started).total_seconds()
+            print("Created order", i + 1, f"rate: {rate:.1f}/s")
+
+    def test_get_notifications(self) -> None:
+        self.start_server(Orders, env_orders)
+        app = self.connect(Orders, env_orders, "test", max_attempts=10).app
 
         # Create an order.
         order1_id = app.create_new_order()
@@ -175,16 +202,13 @@ class TestApplicationServer(TestCase):
         self.assertEqual(len(notifications), 2)
 
     def test_lead_and_follow(self) -> None:
-        # Set up.
-        _ = (
-            start_server(Orders, env_orders_and_reservations),
-            start_server(Reservations, env_orders_and_reservations),
-        )
-        orders_client = create_client(
-            Orders, env_orders_and_reservations, owner_name="test"
-        )
-        orders_client.connect(max_attempts=10)
-        app = orders_client.app
+        # Start servers.
+        env = env_orders_and_reservations
+        self.start_server(Orders, env)
+        self.start_server(Reservations, env)
+
+        # Connect.
+        app = self.connect(Orders, env, "test", max_attempts=10).app
 
         # Create an order.
         order1_id = app.create_new_order()
@@ -216,3 +240,50 @@ class TestApplicationServer(TestCase):
 
         # Let everything finish processing.
         sleep(0.1)
+
+    def start_server(
+        self, app_class: Type[Application], env: EnvType
+    ) -> ApplicationServer:
+        server = start_server(app_class, env)
+        self.servers.append(server)
+        return server
+
+    def connect(
+        self,
+        app_class: Type[TApplication],
+        env: EnvType,
+        owner_name: str,
+        max_attempts: int,
+    ) -> ApplicationClient[TApplication]:
+        client = connect(app_class, env, owner_name, max_attempts)
+        self.clients.append(client)
+        return client
+
+    def setUp(self) -> None:
+        self.servers: List[ApplicationServer] = []
+        self.clients: List[ApplicationClient[Any]] = []
+
+    def tearDown(self) -> None:
+        for client in self.clients:
+            client.close()
+        for server in self.servers:
+            server.stop(wait=True)
+
+
+class TestServerSubprocess(TestCase):
+    def test_start_and_stop_server_subprocess(self) -> None:
+        # Copy and update OS environment.
+        env = os.environ.copy()
+        env.update(env_orders)
+
+        # Start server subprocess.
+        server_subprocess = start_server_subprocess(
+            app_class=Orders, env=env, has_errored=Event()
+        )
+        self.assertTrue(server_subprocess.has_started.wait(timeout=1))
+        self.assertFalse(server_subprocess.has_errored.is_set())
+
+        # Stop server subprocess.
+        sleep(1)
+        server_subprocess.stop()
+        sleep(1)

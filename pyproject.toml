@@ -28,7 +28,7 @@ grpcio = "~1.44.0"
 protobuf = "~3.19.4"
 
 [tool.poetry.scripts]
-eventsourcing_grpc_server = 'eventsourcing_grpc.console:run_application_server'
+eventsourcing_grpc_server = 'eventsourcing_grpc.console:eventsourcing_grpc_server'
 
 [tool.poetry.dev-dependencies]
 black = { version = "*", allow-prereleases = true }

@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import os
 from itertools import count
-from signal import SIGINT
-from subprocess import Popen, TimeoutExpired
-from threading import Event, Thread
+from threading import Event
 from typing import Dict, List, Optional, Type, cast
 
 from eventsourcing.application import Application, TApplication
 from eventsourcing.system import Runner, System
-from eventsourcing.utils import EnvType, get_topic
+from eventsourcing.utils import EnvType
 
 from eventsourcing_grpc.application_client import ApplicationClient
-from eventsourcing_grpc.application_server import ApplicationServer, start_server
+from eventsourcing_grpc.application_server import (
+    ApplicationServer,
+    ServerSubprocess,
+    start_server,
+    start_server_subprocess,
+)
 from eventsourcing_grpc.environment import GrpcEnvironment
 
 
@@ -27,6 +30,7 @@ class GrpcRunner(Runner):
         """
         super().__init__(system=system, env=env)
 
+        self.is_stopping = Event()
         self._env = dict()
         if system.topic:
             self._env["SYSTEM_TOPIC"] = system.topic
@@ -36,10 +40,9 @@ class GrpcRunner(Runner):
 
         self.apps: Dict[str, Application] = {}
         self.port_generator = count(start=50051)
-        self.servers: Dict[str, ApplicationServer] = {}
         self.clients: Dict[str, ApplicationClient[Application]] = {}
-        self.subprocesses: List[Popen[bytes]] = []
-        self.threads: List[SubprocessManager] = []
+        self.servers: Dict[str, ApplicationServer] = {}
+        self.server_subprocesses: List[ServerSubprocess] = []
         self.has_errored = Event()
 
     def start(self, with_subprocesses: bool = False) -> None:
@@ -61,8 +64,11 @@ class GrpcRunner(Runner):
             self.start_application(single_cls, with_subprocess=with_subprocesses)
 
         if with_subprocesses:
+            # Wait for subprocesses to start.
+            for server_subprocess in self.server_subprocesses:
+                server_subprocess.has_started.wait()
             self.has_errored.wait(timeout=1)
-            for t in self.threads:
+            for t in self.server_subprocesses:
                 if (not t.has_started.wait(timeout=0)) or t.has_errored.is_set():
                     self.stop()
                     raise Exception("Failed to start sub processes")
@@ -73,22 +79,16 @@ class GrpcRunner(Runner):
         if self.has_errored.is_set():
             return
         if with_subprocess is False:
-            self.start_server_inprocess(app_class)
+            self.servers[app_class.name] = start_server(
+                app_class=app_class, env=self._env
+            )
+
         else:
-            self.start_server_subprocess(app_class)
-
-    def start_server_inprocess(self, app_class: Type[Application]) -> None:
-        self.servers[app_class.name] = start_server(app_class=app_class, env=self._env)
-
-    def start_server_subprocess(self, app_class: Type[Application]) -> None:
-        # print("Starting server", app_class)
-        thread = SubprocessManager(
-            app_class=app_class, env=self._env, has_errored=self.has_errored
-        )
-        self.threads.append(thread)
-        thread.start()
-        thread.has_started.wait()
-        self.subprocesses.append(thread.process)
+            self.server_subprocesses.append(
+                start_server_subprocess(
+                    app_class=app_class, env=self._env, has_errored=self.has_errored
+                )
+            )
 
     def get_client(self, cls: Type[TApplication]) -> ApplicationClient[TApplication]:
         try:
@@ -101,7 +101,10 @@ class GrpcRunner(Runner):
             transcoder = cls(env=env).construct_transcoder()
             address = GrpcEnvironment(self._env).get_server_address(cls.name)
             client = ApplicationClient(
-                owner_name=type(self).__name__, address=address, transcoder=transcoder
+                owner_name=type(self).__name__,
+                address=address,
+                transcoder=transcoder,
+                is_stopping=self.is_stopping,
             )
             client.connect()
             self.clients[cls.name] = client
@@ -114,69 +117,19 @@ class GrpcRunner(Runner):
         self.stop()
 
     def stop(self) -> None:
+        self.is_stopping.set()
         for client in self.clients.values():
             client.close()
         self.clients.clear()
         for server in self.servers.values():
             server.stop()
+        for server in self.servers.values():
+            server.has_stopped.wait()
         self.servers.clear()
-        for process in self.subprocesses:
-            self.stop_subprocess(process)
-        for process in self.subprocesses:
-            self.kill_subprocess(process)
-        self.subprocesses.clear()
+        for process in self.server_subprocesses:
+            process.stop()
+        for process in self.server_subprocesses:
+            process.has_stopped.wait()
         for app in self.apps.values():
             app.close()
         self.apps.clear()
-
-    def stop_subprocess(self, process: Popen[bytes]) -> None:
-        """
-        Stops given gRPC process.
-        """
-        exit_status_code = process.poll()
-        if exit_status_code is None:
-            process.send_signal(SIGINT)
-
-    def kill_subprocess(self, process: Popen[bytes]) -> None:
-        """
-        Kills given gRPC process, if it still running.
-        """
-        try:
-            process.wait(timeout=1)
-        except TimeoutExpired:
-            print("Timed out waiting for process to stop. Terminating....")
-            process.terminate()
-            try:
-                process.wait(timeout=1)
-            except TimeoutExpired:
-                print("Timed out waiting for process to terminate. Killing....")
-                process.kill()
-            # print("Processor exit code: %s" % process.poll())
-
-
-class SubprocessManager(Thread):
-    def __init__(
-        self, app_class: Type[Application], env: EnvType, has_errored: Event
-    ) -> None:
-        super().__init__(daemon=True)
-        self.app_class = app_class
-        self.env = env
-        self.has_errored = has_errored
-        self.has_started = Event()
-
-    def run(self) -> None:
-        try:
-            env = dict(self.env)
-            env["APPLICATION_TOPIC"] = get_topic(self.app_class)
-            self.process = Popen(
-                ["eventsourcing_grpc_server"],
-                close_fds=True,
-                env=env,
-            )
-        except BaseException:
-            self.has_errored.set()
-        finally:
-            self.has_started.set()
-        if self.process.wait():
-            self.has_errored.set()
-        # print("Subprocess exited, status code", self.process.returncode)
