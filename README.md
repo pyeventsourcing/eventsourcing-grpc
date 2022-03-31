@@ -100,7 +100,7 @@ Close client and stop server.
 
 ```python
 client.close()
-server.stop()
+server.stop(wait=True)
 ```
 
 
