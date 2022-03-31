@@ -9,7 +9,7 @@ from uuid import UUID
 
 from eventsourcing.utils import EnvType
 
-from eventsourcing_grpc.application_client import ClientClosedError, GrpcError
+from eventsourcing_grpc.application_client import ClientClosedError, GrpcError, connect
 from eventsourcing_grpc.example import Orders, system
 from eventsourcing_grpc.runner import GrpcRunner
 
@@ -89,6 +89,14 @@ class TestRunner(TestCase):
     def _test_long_runner_with_subprocess_servers(self) -> None:
         self._long_runner(with_subprocesses=True)
 
+    def _test_long_runner_with_runner_console_cmd(self) -> None:
+        env = {
+            "ORDERS_GRPC_SERVER_ADDRESS": "localhost:50051",
+        }
+
+        orders_client = connect(Orders, env=env, owner_name="test", max_attempts=10)
+        self._do_orders(orders_client.app)
+
     def _long_runner(self, with_subprocesses: bool = False) -> None:  # noqa: C901
         # Set up.
         env = {
@@ -102,11 +110,14 @@ class TestRunner(TestCase):
 
         self.start_runner(env, with_subprocesses)
 
-        # Create an order.
+        # Get orders client.
         orders = self.runner.get(Orders)
 
-        order_ids = []
+        # Do orders.
+        self._do_orders(orders)
 
+    def _do_orders(self, orders: Orders) -> None:  # noqa: C901
+        order_ids = []
         started = datetime.now()
 
         def create_order() -> None:
@@ -167,7 +178,9 @@ class TestRunner(TestCase):
                                     f"rate: {rate:.0f}/s",
                                 )
                             break
-                        elif self.runner.has_errored.is_set():
+                        elif (
+                            hasattr(self, "runner") and self.runner.has_errored.is_set()
+                        ):
                             self.fail("Runner error")
                         else:
                             sleep(0.1)
@@ -183,9 +196,7 @@ class TestRunner(TestCase):
         thread1.start()
         thread2 = Thread(target=check_order)
         thread2.start()
-
         thread2.join()
-
         if self.test_errored.is_set():
             if self.is_terminated.is_set():
                 self.fail("Test terminated by signal")

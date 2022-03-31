@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
@@ -27,9 +28,11 @@ from eventsourcing.utils import EnvType, get_topic
 from grpc import ServicerContext, local_server_credentials
 
 from eventsourcing_grpc.application_client import (
-    ApplicationClient,
     ClientClosedError,
+    DeadlineExceeded,
+    GrpcApplicationClient,
     GrpcError,
+    ServiceUnavailable,
     create_client,
 )
 from eventsourcing_grpc.environment import GrpcEnvironment
@@ -49,7 +52,7 @@ from eventsourcing_grpc.protos.application_pb2_grpc import (
 
 
 class GRPCRemoteNotificationLog(NotificationLog):
-    def __init__(self, leader_client: ApplicationClient[Application]):
+    def __init__(self, leader_client: GrpcApplicationClient[Application]):
         self.leader_client = leader_client
 
     def __getitem__(self, section_id: str) -> Section:
@@ -71,7 +74,7 @@ class GRPCRecordingEventReceiver(RecordingEventReceiver):
     def __init__(
         self,
         leader_name: str,
-        follower_client: ApplicationClient[Application],
+        follower_client: GrpcApplicationClient[Application],
         min_interval: float = 0.05,  # Todo: Make this configurable.
     ):
         self.leader_name = leader_name
@@ -103,6 +106,16 @@ class GRPCRecordingEventReceiver(RecordingEventReceiver):
         with self.timer_lock:
             try:
                 self.follower_client.prompt(name=self.leader_name)
+            except ServiceUnavailable:
+                print(
+                    f"Error: Prompting of {self.follower_client.application_name} by",
+                    f"{self.follower_client.owner_name} failed (service unavailable)",
+                )
+            except DeadlineExceeded:
+                print(
+                    f"Error: Prompting of {self.follower_client.application_name} by",
+                    f"{self.follower_client.owner_name} failed (deadline exceeded)",
+                )
             except (GrpcError, ValueError, AttributeError, ClientClosedError):
                 # Todo: Log failure to prompt downstream application,
                 #  possibly the connection is already closed.
@@ -134,7 +147,6 @@ class ApplicationService(ApplicationServicer):
         self.prompted_names_lock = Lock()
         self.is_prompted = Event()
         self.last_prompt_times: Dict[str, float] = {}
-        self.pull_and_process_loop_has_stopped = Event()
         self.self_prompt_loop_has_stopped = Event()
 
     def Ping(self, request: Empty, context: ServicerContext) -> Empty:
@@ -184,53 +196,8 @@ class ApplicationService(ApplicationServicer):
         with self.prompted_names_lock:
             if leader_name not in self.prompted_names:
                 self.prompted_names.append(leader_name)
-                self.is_prompted.set()
                 self.last_prompt_times[leader_name] = monotonic()
-
-    def pull_and_process_loop(self) -> None:
-        try:
-            while not self.is_stopping.is_set():
-                # Keep checking if is stopped.
-                if not self.is_prompted.wait(timeout=1):
-                    continue
-
-                with self.prompted_names_lock:
-                    prompted_names = self.prompted_names
-                    self.prompted_names = []
-                    self.is_prompted.clear()
-                for name in prompted_names:
-                    if self.is_stopping.is_set():
-                        break
-                    try:
-                        assert isinstance(self.application, Follower)
-                        if name not in self.application.readers:
-                            # print(f"{self.application.name} can't pull
-                            # from {name} without reader")
-                            self.prompt(name)
-                            sleep(1)
-                        else:
-                            self.application.pull_and_process(name)
-                    except Exception as e:
-                        if self.is_stopping.is_set():
-                            raise
-                        error = EventProcessingError(str(e))
-                        error.__cause__ = e
-                        # Todo: Log the error.
-                        print(
-                            f"Error in {self.application.name} processing"
-                            f" {name} events:",
-                            traceback.format_exc(),
-                        )
-                        self.prompt(name)
-                        # print("Sleeping after error....")
-                        sleep(1)
-        except BaseException:
-            if self.is_stopping.is_set():
-                pass
-            else:
-                raise
-        finally:
-            self.pull_and_process_loop_has_stopped.set()
+                self.is_prompted.set()
 
     def self_prompt_loop(self) -> None:
         try:
@@ -261,10 +228,9 @@ class ApplicationService(ApplicationServicer):
         self.is_stopping.set()
         self.is_prompted.set()
         self.self_prompt_loop_has_stopped.wait()
-        self.pull_and_process_loop_has_stopped.wait()
 
 
-class ApplicationServer:
+class GrpcApplicationServer:
     def __init__(
         self,
         app_class: Type[Application],
@@ -278,6 +244,7 @@ class ApplicationServer:
         self.has_started = Event()
         self.is_stopping = is_stopping or Event()
         self.init_lead_and_follow_has_stopped = Event()
+        self.pull_and_process_loop_has_stopped = Event()
         self.has_stopped = Event()
         self.grpc_env = GrpcEnvironment(env=env)
         self.application = app_class(env=env)
@@ -310,7 +277,7 @@ class ApplicationServer:
             )
 
         self.clients_lock = Lock()
-        self.clients: Dict[Type[Application], ApplicationClient[Application]] = {}
+        self.clients: Dict[str, GrpcApplicationClient[Application]] = {}
         self.max_pull_interval = self.grpc_env.get_max_pull_interval(
             self.application.name
         )
@@ -356,9 +323,9 @@ class ApplicationServer:
 
             # print(self.application.name, "submitting jobs to executor")
             self.executor.submit(self.init_lead_and_follow)
-            self.executor.submit(self.service.pull_and_process_loop)
+            self.executor.submit(self.pull_and_process_loop)
             self.executor.submit(self.service.self_prompt_loop)
-            print("Started application server", self.application.name)
+            print(self.application.name, "server started:", self.address)
         finally:
             with self.lock:
                 self.has_started.set()
@@ -373,7 +340,12 @@ class ApplicationServer:
         try:
             system = self.grpc_env.get_system()
             if system is not None:
-                for follower_name in system.leads[self.application.name]:
+                followers = system.leads[self.application.name]
+                # print(self.application.name, "leads:", ", ".join(followers) )
+                leaders = system.leads[self.application.name]
+                # print(self.application.name, "follows:", ", ".join(leaders) )
+
+                for follower_name in followers:
                     follower_cls = system.follower_cls(follower_name)
                     follower_client = self.get_client(
                         owner_name=self.application.name,
@@ -387,7 +359,7 @@ class ApplicationServer:
                     assert isinstance(self.application, Leader)
                     self.application.lead(follower=recording_event_receiver)
 
-                for leader_name in system.follows[self.application.name]:
+                for leader_name in leaders:
                     leader_cls = system.follower_cls(leader_name)
                     leader_client = self.get_client(
                         owner_name=self.application.name,
@@ -401,23 +373,79 @@ class ApplicationServer:
                     self.application.follow(name=leader_name, log=notification_log)
                     # Prompt to catch up on anything new.
                     self.service.prompt(leader_name)
-        except BaseException:
+
+        except BaseException as e:
             if self.is_stopping.is_set():
                 pass
             else:
-                raise
+                print("Error initialising lead and follow connections:", e)
+                raise e
         finally:
             self.init_lead_and_follow_has_stopped.set()
 
+    def pull_and_process_loop(self) -> None:
+        try:
+            while not self.is_stopping.is_set():
+                # Keep checking if is stopped.
+                if not self.service.is_prompted.wait(timeout=1):
+                    continue
+
+                with self.service.prompted_names_lock:
+                    prompted_names = self.service.prompted_names
+                    self.service.prompted_names = []
+                    self.service.is_prompted.clear()
+
+                for name in prompted_names:
+                    if self.is_stopping.is_set():
+                        break
+                    try:
+                        assert isinstance(self.application, Follower)
+                        if name not in self.application.readers:
+                            # print(f"{self.application.name} can't pull
+                            # from {name} without reader")
+                            self.service.prompt(name)
+                            sleep(1)
+                        else:
+                            print(f"{self.application.name} pulling from {name}...")
+                            self.application.pull_and_process(name)
+                    except ServiceUnavailable:
+                        print(f"Error: {name} pulling failed (service unavailable)")
+                    except DeadlineExceeded:
+                        print(f"Error: {name} pulling failed (deadline exceeded)")
+                    except Exception as e:
+                        if self.is_stopping.is_set():
+                            raise
+                        error = EventProcessingError(str(e))
+                        error.__cause__ = e
+                        # Todo: Log the error.
+                        print(
+                            f"General error in {self.application.name} when",
+                            "pulling and processing {name} events:",
+                            traceback.format_exc(),
+                        )
+                        self.service.prompt(name)
+                        # print("Sleeping after error....")
+                        sleep(1)
+        except BaseException as e:
+            if self.is_stopping.is_set():
+                pass
+            else:
+                print(traceback.format_exc())
+                print("Error in pull_and_process loop:", e)
+                raise
+        finally:
+            print("Pull and process loop exited......")
+            self.pull_and_process_loop_has_stopped.set()
+
     def get_client(
         self, owner_name: str, app_class: Type[TApplication], env: EnvType
-    ) -> ApplicationClient[Application]:
+    ) -> GrpcApplicationClient[Application]:
         with self.clients_lock:
             if self.is_stopping.is_set() or self.has_stopped.is_set():
                 raise AssertionError("Server has been stopped already")
 
             try:
-                client = self.clients[app_class]
+                client = self.clients[app_class.name]
             except KeyError:
                 client = create_client(
                     owner_name=owner_name,
@@ -430,7 +458,7 @@ class ApplicationServer:
                     client.close()
                     client.assert_client_not_closed()
                 else:
-                    self.clients[app_class] = client
+                    self.clients[app_class.name] = client
             return client
 
     def wait_for_termination(self) -> None:
@@ -445,7 +473,7 @@ class ApplicationServer:
     def _stop(self) -> None:
         try:
             self.service.self_prompt_loop_has_stopped.wait()
-            self.service.pull_and_process_loop_has_stopped.wait()
+            self.pull_and_process_loop_has_stopped.wait()
             self.init_lead_and_follow_has_stopped.wait()
             if not self.has_started.is_set():
                 # print("stop() is_running not set, returning")
@@ -479,9 +507,15 @@ class ApplicationServer:
 
 
 def start_server(
-    app_class: Type[Application], env: EnvType, is_stopping: Optional[Event] = None
-) -> ApplicationServer:
-    server = ApplicationServer(app_class=app_class, env=env, is_stopping=is_stopping)
+    app_class: Type[Application],
+    env: Optional[EnvType] = None,
+    is_stopping: Optional[Event] = None,
+) -> GrpcApplicationServer:
+    server = GrpcApplicationServer(
+        app_class=app_class,
+        env=env or os.environ.copy(),
+        is_stopping=is_stopping,
+    )
     server.start()
     return server
 

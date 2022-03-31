@@ -12,13 +12,13 @@ from eventsourcing.system import System
 from eventsourcing.utils import EnvType
 
 from eventsourcing_grpc.application_client import (
-    ApplicationClient,
-    ChannelConnectTimeout,
+    GrpcApplicationClient,
+    ServiceUnavailable,
     connect,
     create_client,
 )
 from eventsourcing_grpc.application_server import (
-    ApplicationServer,
+    GrpcApplicationServer,
     start_server,
     start_server_subprocess,
 )
@@ -41,9 +41,9 @@ env_orders_and_reservations: EnvType = {
 hostname = socket.gethostname()
 
 
-class TestApplicationServer(TestCase):
+class TestGrpcApplicationServer(TestCase):
     def test_start_stop(self) -> None:
-        server = ApplicationServer(app_class=Orders, env=env_orders)
+        server = GrpcApplicationServer(app_class=Orders, env=env_orders)
         self.assertFalse(server.has_started.is_set())
         self.assertFalse(server.has_stopped.is_set())
 
@@ -73,12 +73,34 @@ class TestApplicationServer(TestCase):
 
     def test_client_connect_failure(self) -> None:
         # Don't start a server.
-        with self.assertRaises(ChannelConnectTimeout):
-            self.connect(Orders, env_orders, owner_name="test", max_attempts=2)
+        client = self.connect(Orders, env_orders, owner_name="test", max_attempts=2)
+
+        # Expect service is unavailable.
+        with self.assertRaises(ServiceUnavailable):
+            client.ping()
 
     def test_client_connect_success(self) -> None:
         self.start_server(Orders, env_orders)
         self.connect(Orders, env_orders, owner_name="test", max_attempts=2)
+
+    def test_client_reconnect(self) -> None:
+        server = self.start_server(Orders, env_orders)
+        client = self.connect(Orders, env_orders, owner_name="test", max_attempts=2)
+        client.ping()
+        server.stop()
+        sleep(1)
+        try:
+            client.ping()
+        except ServiceUnavailable:
+            pass
+        else:
+            self.fail("Service was still available")
+        self.start_server(Orders, env_orders)
+        sleep(1)
+        try:
+            client.ping()
+        except ServiceUnavailable:
+            self.fail("Service was unavailable")
 
     def test_ssl_credentials(self) -> None:
         ssl_private_key_path = os.path.join(
@@ -243,7 +265,7 @@ class TestApplicationServer(TestCase):
 
     def start_server(
         self, app_class: Type[Application], env: EnvType
-    ) -> ApplicationServer:
+    ) -> GrpcApplicationServer:
         server = start_server(app_class, env)
         self.servers.append(server)
         return server
@@ -254,14 +276,14 @@ class TestApplicationServer(TestCase):
         env: EnvType,
         owner_name: str,
         max_attempts: int,
-    ) -> ApplicationClient[TApplication]:
+    ) -> GrpcApplicationClient[TApplication]:
         client = connect(app_class, env, owner_name, max_attempts)
         self.clients.append(client)
         return client
 
     def setUp(self) -> None:
-        self.servers: List[ApplicationServer] = []
-        self.clients: List[ApplicationClient[Any]] = []
+        self.servers: List[GrpcApplicationServer] = []
+        self.clients: List[GrpcApplicationClient[Any]] = []
 
     def tearDown(self) -> None:
         for client in self.clients:

@@ -9,7 +9,7 @@ from uuid import UUID
 from eventsourcing.application import TApplication
 from eventsourcing.utils import EnvType
 
-from eventsourcing_grpc.application_client import ApplicationClient, create_client
+from eventsourcing_grpc.application_client import GrpcApplicationClient, create_client
 from eventsourcing_grpc.example import Orders
 
 hostname = socket.gethostname()
@@ -95,7 +95,7 @@ class TestDocker(TestCase):
 
     def _connect(
         self, app_class: Type[TApplication], env: EnvType
-    ) -> ApplicationClient[TApplication]:
+    ) -> GrpcApplicationClient[TApplication]:
         client = create_client(owner_name="test", app_class=app_class, env=env)
         client.connect(max_attempts=10)
         return client

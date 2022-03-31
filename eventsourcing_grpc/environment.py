@@ -12,6 +12,7 @@ class GrpcEnvironment:
         env = Environment(name=name, env=self.env)
         address = env.get("GRPC_SERVER_ADDRESS")
         if not address:
+            print(f"{name} gRPC server address not found in environment")
             raise ValueError(f"{name} gRPC server address not found in environment")
         else:
             return address
@@ -20,7 +21,7 @@ class GrpcEnvironment:
         env = Environment(name=name, env=self.env)
         max_pull_interval_str = env.get("MAX_PULL_INTERVAL")
         if not max_pull_interval_str:
-            return 0
+            return 10
         try:
             max_pull_interval = float(max_pull_interval_str)
         except ValueError:
