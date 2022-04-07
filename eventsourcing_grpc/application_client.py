@@ -128,7 +128,19 @@ class GrpcApplicationClient(Generic[TApplication]):
             return
         # attempts += 1
         # self._close()
-        self.channel = grpc.secure_channel(self.address, credentials=self.credentials)
+        self.channel = grpc.secure_channel(
+            self.address,
+            credentials=self.credentials,
+            options=[
+                # ("grpc.initial_reconnect_backoff_ms", 1000),
+                ("grpc.max_reconnect_backoff_ms", 5000),
+                # ("grpc.min_reconnect_backoff_ms", 5000),
+                # ("grpc.max_connection_age_ms", 5000),  # seems to have no effect
+                # ("grpc.max_connection_age_grace_ms", 5000),  # seems to have no effect
+                # ("grpc.client_idle_timeout_ms", 15000),
+                # ("grpc.max_connection_idle_ms", 15000),
+            ]
+        )
         self.stub = ApplicationStub(self.channel)
         self.channel.subscribe(self.handle_channel_state_change)
 

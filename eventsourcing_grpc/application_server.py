@@ -378,6 +378,7 @@ class GrpcApplicationServer:
             if self.is_stopping.is_set():
                 pass
             else:
+                print(traceback.format_exc())
                 print("Error initialising lead and follow connections:", e)
                 raise e
         finally:
