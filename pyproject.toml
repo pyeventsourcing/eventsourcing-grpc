@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "eventsourcing_grpc"
+name = "eventsourcing-grpc"
 version = "0.1"
 description = "Eventsourcing gRPC"
 authors = [
@@ -16,16 +16,16 @@ classifiers = [
     "Programming Language :: Python",
 ]
 readme = "README.md"
-#homepage = ""
-#repository = ""
-include = ["eventsourcing-grpc/py.typed"]
+homepage = "https://github.com/pyeventsourcing/eventsourcing-grpc"
+repository = "https://github.com/pyeventsourcing/eventsourcing-grpc"
+include = ["eventsourcing_grpc/py.typed"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
 eventsourcing = { version = "~9.2.4" }
 #eventsourcing = { git = "https://github.com/pyeventsourcing/eventsourcing.git", branch = "9.2"}
-grpcio = "~1.44.0"
-protobuf = "~3.19.4"
+grpcio = "~1.45.0"
+protobuf = "~3.20.0"
 
 [tool.poetry.scripts]
 eventsourcing_grpc_server = 'eventsourcing_grpc.console:eventsourcing_grpc_server'
