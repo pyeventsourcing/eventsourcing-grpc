@@ -139,7 +139,7 @@ class GrpcApplicationClient(Generic[TApplication]):
                 # ("grpc.max_connection_age_grace_ms", 5000),  # seems to have no effect
                 # ("grpc.client_idle_timeout_ms", 15000),
                 # ("grpc.max_connection_idle_ms", 15000),
-            ]
+            ],
         )
         self.stub = ApplicationStub(self.channel)
         self.channel.subscribe(self.handle_channel_state_change)

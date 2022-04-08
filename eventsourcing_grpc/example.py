@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from eventsourcing.application import ProcessingEvent
-from eventsourcing.domain import Aggregate, DomainEvent, event
+from eventsourcing.domain import Aggregate, DomainEventProtocol, event
 from eventsourcing.persistence import Transcoder, Transcoding
 from eventsourcing.system import ProcessApplication, System
 
@@ -14,7 +14,7 @@ class Order(Aggregate):
         self.reservation_id: Optional[UUID] = None
         self.payment_id: Optional[UUID] = None
 
-    class Reserved(Aggregate.Event["Order"]):
+    class Reserved(Aggregate.Event):
         reservation_id: UUID
 
     @event(Reserved)
@@ -31,7 +31,7 @@ class Order(Aggregate):
 
 
 class Reservation(Aggregate):
-    class Created(Aggregate.Created["Payment"]):
+    class Created(Aggregate.Created):
         order_id: UUID
 
     @event(Created)
@@ -44,7 +44,7 @@ class Reservation(Aggregate):
 
 
 class Payment(Aggregate):
-    class Created(Aggregate.Created["Payment"]):
+    class Created(Aggregate.Created):
         order_id: UUID
 
     @event(Created)
@@ -105,7 +105,7 @@ class Orders(ProcessApplication):
 
     def policy(
         self,
-        domain_event: DomainEvent[Any],
+        domain_event: DomainEventProtocol,
         processing_event: ProcessingEvent,
     ) -> None:
         if isinstance(domain_event, Reservation.Created):
@@ -128,7 +128,7 @@ class Orders(ProcessApplication):
 class Reservations(ProcessApplication):
     def policy(
         self,
-        domain_event: DomainEvent[Any],
+        domain_event: DomainEventProtocol,
         processing_event: ProcessingEvent,
     ) -> None:
         if isinstance(domain_event, Order.Created):
@@ -140,7 +140,7 @@ class Reservations(ProcessApplication):
 class Payments(ProcessApplication):
     def policy(
         self,
-        domain_event: DomainEvent[Any],
+        domain_event: DomainEventProtocol,
         processing_event: ProcessingEvent,
     ) -> None:
         if isinstance(domain_event, Order.Reserved):

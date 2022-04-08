@@ -3,14 +3,14 @@ from itertools import count
 from signal import SIGINT, SIGTERM, getsignal, signal, strsignal
 from threading import Event, Lock, Thread
 from time import sleep
-from typing import Any
+from typing import Any, cast
 from unittest import TestCase
 from uuid import UUID
 
 from eventsourcing.utils import EnvType
 
 from eventsourcing_grpc.application_client import ClientClosedError, GrpcError, connect
-from eventsourcing_grpc.example import Orders, system
+from eventsourcing_grpc.example import Order, Orders, system
 from eventsourcing_grpc.runner import GrpcRunner
 
 # NB, uses "localhost" so client and server don't authenticate with certificates.
@@ -78,8 +78,12 @@ class TestRunner(TestCase):
         )
 
         orders_app = Orders()
-        first_event = orders_app.mapper.to_domain_event(notifications[0])
-        last_event = orders_app.mapper.to_domain_event(notifications[-1])
+        first_event = cast(
+            Order.Event, orders_app.mapper.to_domain_event(notifications[0])
+        )
+        last_event = cast(
+            Order.Event, orders_app.mapper.to_domain_event(notifications[-1])
+        )
         duration = last_event.timestamp - first_event.timestamp
         print("Duration:", duration)
 
