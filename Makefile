@@ -92,8 +92,8 @@ grpc-stubs:
 	  --mypy_out=. \
 	  protos/eventsourcing_grpc/protos/application.proto
 
-.PHONY: python-dist
-python-dist:
+.PHONY: build
+build:
 	rm -r ./dist/ || true
 	$(POETRY) build
 # 	$(POETRY) build -f sdist    # build source distribution only
