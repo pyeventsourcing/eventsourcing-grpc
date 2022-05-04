@@ -11,7 +11,7 @@ classes in the core eventsourcing library. It can run a system of event-sourced
 applications as a set of gRPC servers. Leader and follower connections, for prompting
 and pulling event notifications, are implemented with gRPC clients.
 
-This package provides console commands can be used to start servers and run systems
+This package provides console commands that can be used to start servers and run systems
 from a command line interface.
 
 This package also provides an example of running an event-sourced application in
