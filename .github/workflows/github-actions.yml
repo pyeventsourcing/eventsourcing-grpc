@@ -130,7 +130,7 @@ jobs:
         run: sudo echo "127.0.0.1 orders" | sudo tee -a /etc/hosts
 
       - name: Build Python distribution
-        run: make python-dist
+        run: make build
 
       - name: Build Docker container image
         run: make container-image
@@ -176,7 +176,7 @@ jobs:
         run: sudo echo "127.0.0.1 orders" | sudo tee -a /etc/hosts
 
       - name: Build Python distribution
-        run: make python-dist
+        run: make build
 
       - name: Build Docker container image in minikube
         run: make minikube-container-image
