@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Install eventsourcing_grpc.
 COPY ./dist dist
+RUN pip install -U pip
 RUN pip install dist/*.whl
 RUN rm -r dist
 ENV PYTHONUNBUFFERED = 1
