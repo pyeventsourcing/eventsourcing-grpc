@@ -24,7 +24,7 @@ include = ["eventsourcing_grpc/py.typed"]
 python = "^3.8"
 eventsourcing = { version = "~9.2.11" }
 #eventsourcing = { git = "https://github.com/pyeventsourcing/eventsourcing.git", branch = "9.2"}
-grpcio = "~1.45.0"
+grpcio = "~1.44.0"
 protobuf = "~3.20.0"
 
 [tool.poetry.scripts]
