@@ -11,6 +11,7 @@ classifiers = [
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python",
@@ -21,7 +22,7 @@ repository = "https://github.com/pyeventsourcing/eventsourcing-grpc"
 include = ["eventsourcing_grpc/py.typed"]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.7"
 eventsourcing = { version = "~9.2.11" }
 #eventsourcing = { git = "https://github.com/pyeventsourcing/eventsourcing.git", branch = "9.2"}
 grpcio = "~1.44.0"
