@@ -1,6 +1,6 @@
 from datetime import datetime
 from itertools import count
-from signal import SIGINT, SIGTERM, getsignal, signal, strsignal
+from signal import SIGINT, SIGTERM, getsignal, signal
 from threading import Event, Lock, Thread
 from time import sleep
 from typing import Any, cast
@@ -217,8 +217,7 @@ class TestRunner(TestCase):
         def signal_handler(signum: int, _: Any) -> None:
             self.is_terminated.set()
             print(
-                f"Test process received signal {signum} ",
-                f"('{strsignal(signum)}'), stopping runner...",
+                f"Test process received signal {signum}, stopping runner...",
             )
             self.test_errored.set()
             with self.lock:
