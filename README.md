@@ -1,4 +1,6 @@
-# Welcome to Eventsourcing gRPC
+# Event Sourcing with gRPC
+
+This is an extension for [the Python eventsourcing library](https://github.com/pyeventsourcing/eventsourcing).
 
 This package provides a gRPC server class that runs event-sourced applications
 in a gRPC server. A gRPC client class can be used to interact with the application

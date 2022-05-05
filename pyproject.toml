@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "eventsourcing-grpc"
 version = "0.1.1"
-description = "Eventsourcing gRPC"
+description = "Python package for eventsourcing with gRPC"
 authors = [
     "John Bywater <john.bywater@appropriatesoftware.net>",
 ]
